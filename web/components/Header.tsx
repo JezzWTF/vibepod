@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type ServerStatus = "checking" | "loading" | "online" | "error" | "offline";
+type ServerStatus = "checking" | "downloading" | "loading" | "online" | "error" | "offline";
 
 // Polling intervals: poll quickly until the server is online, then slow down.
 const FAST_INTERVAL_MS = 3000;   // while checking / loading
@@ -28,7 +28,7 @@ export default function Header() {
           intervalRef.current = setInterval(checkHealth, SLOW_INTERVAL_MS);
         }
         // Switch to fast polling if we detect the server went offline/loading
-        if ((newStatus === "offline" || newStatus === "loading") && intervalRef.current) {
+        if ((newStatus === "offline" || newStatus === "downloading" || newStatus === "loading") && intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = setInterval(checkHealth, FAST_INTERVAL_MS);
         }
@@ -61,6 +61,12 @@ export default function Header() {
       label: "Loading model…",
       pulse: true,
       ring: "border-blue-400/30",
+    },
+    downloading: {
+      color: "bg-sky-400",
+      label: "Downloading model…",
+      pulse: true,
+      ring: "border-sky-400/30",
     },
     online: {
       color: "bg-green-500",

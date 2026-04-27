@@ -18,7 +18,12 @@ export async function GET() {
       // "online" | "loading" | "error"
       const status: string = data.status ?? "online";
       return NextResponse.json(
-        { status, message: data.message },
+        {
+          status,
+          message: data.message,
+          progress: data.progress ?? null,
+          voices: data.voices ?? [],
+        },
         { headers: { "Cache-Control": "no-store" } }
       );
     }

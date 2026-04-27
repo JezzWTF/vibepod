@@ -49,7 +49,7 @@ def download() -> str:
     )
 
     elapsed = time.time() - start
-    print(f"Model ready in {elapsed:.1f}s → {cache_path}")
+    print(f"Model ready in {elapsed:.1f}s -> {cache_path}")
     return cache_path
 
 
