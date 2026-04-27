@@ -1,0 +1,34 @@
+[project]
+name = "vibepod-server"
+version = "0.1.0"
+description = "VibePod TTS Server — VibeVoice FastAPI backend"
+requires-python = ">=3.10"
+dependencies = [
+    # torch is listed explicitly so uv pulls the CUDA wheel (see [tool.uv.sources]).
+    # To switch back to CPU-only, remove the [tool.uv.sources] torch entry below.
+    "torch>=2.0.0",
+    # VibeVoice custom model + processor classes (not yet in upstream transformers)
+    "vibevoice @ git+https://github.com/microsoft/VibeVoice.git",
+    # Exact version required by vibevoice's streaming TTS module
+    "transformers==4.51.3",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "soundfile>=0.12.1",
+    "pydantic>=2.7.0",
+    "huggingface_hub>=0.23.0",
+]
+
+# No build-system — this is a scripts project, not an installable package.
+# Lock file is committed so installs are reproducible.
+# Run `uv lock --upgrade` to bump dependencies.
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+# Pull torch from the PyTorch CUDA 12.4 index instead of PyPI's CPU-only wheel.
+# CUDA 12.4 runs on any driver >= 525.60 (RTX 30/40 series all qualify).
+# To use CPU instead: remove this block and run `uv sync --reinstall-package torch`.
+torch = { index = "pytorch-cu124" }

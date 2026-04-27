@@ -1,0 +1,24 @@
+# Python
+server/.venv/
+server/voices/
+server/__pycache__/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node (root-level)
+node_modules/
+web/.next/
+web/tsconfig.tsbuildinfo
+web/next-env.d.ts
+web/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
