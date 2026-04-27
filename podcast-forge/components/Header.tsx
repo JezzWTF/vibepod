@@ -1,46 +1,84 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-type ServerStatus = "checking" | "online" | "offline";
+type ServerStatus = "checking" | "loading" | "online" | "error" | "offline";
+
+// Polling intervals: poll quickly until the server is online, then slow down.
+const FAST_INTERVAL_MS = 3000;   // while checking / loading
+const SLOW_INTERVAL_MS = 30000;  // once online
 
 export default function Header() {
   const [status, setStatus] = useState<ServerStatus>("checking");
+  const [message, setMessage] = useState<string | undefined>();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch("/api/health");
+        const res = await fetch("/api/health", { cache: "no-store" });
         const data = await res.json();
-        setStatus(data.status === "online" ? "online" : "offline");
+        const newStatus: ServerStatus = (data.status as ServerStatus) ?? "offline";
+        setStatus(newStatus);
+        setMessage(data.message);
+
+        // Switch to slow polling once we know the server is online
+        if (newStatus === "online" && intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = setInterval(checkHealth, SLOW_INTERVAL_MS);
+        }
+        // Switch to fast polling if we detect the server went offline/loading
+        if ((newStatus === "offline" || newStatus === "loading") && intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = setInterval(checkHealth, FAST_INTERVAL_MS);
+        }
       } catch {
         setStatus("offline");
+        setMessage(undefined);
       }
     };
 
+    // Start with a fast poll — the server may still be loading the model
     checkHealth();
-    const interval = setInterval(checkHealth, 30000);
-    return () => clearInterval(interval);
+    intervalRef.current = setInterval(checkHealth, FAST_INTERVAL_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, []);
 
-  const statusConfig = {
+  const statusConfig: Record<
+    ServerStatus,
+    { color: string; label: string; pulse: boolean; ring: string }
+  > = {
     checking: {
       color: "bg-yellow-500",
-      label: "Checking...",
-      textColor: "text-yellow-400",
+      label: "Checking…",
       pulse: true,
+      ring: "border-yellow-500/30",
+    },
+    loading: {
+      color: "bg-blue-400",
+      label: "Loading model…",
+      pulse: true,
+      ring: "border-blue-400/30",
     },
     online: {
       color: "bg-green-500",
       label: "Server Online",
-      textColor: "text-green-400",
       pulse: false,
+      ring: "border-green-500/30",
+    },
+    error: {
+      color: "bg-orange-500",
+      label: "Model Error",
+      pulse: false,
+      ring: "border-orange-500/30",
     },
     offline: {
       color: "bg-red-500",
       label: "Server Offline",
-      textColor: "text-red-400",
       pulse: false,
+      ring: "border-red-500/30",
     },
   };
 
@@ -85,16 +123,19 @@ export default function Header() {
       </div>
 
       <div
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border"
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${cfg.ring}`}
         style={{
           background: "var(--background)",
           borderColor: "var(--border)",
         }}
+        title={message}
       >
         <span className="relative flex h-2 w-2">
-          <span
-            className={`${cfg.pulse ? "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 " + cfg.color : "hidden"}`}
-          />
+          {cfg.pulse && (
+            <span
+              className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.color}`}
+            />
+          )}
           <span
             className={`relative inline-flex rounded-full h-2 w-2 ${cfg.color}`}
           />
@@ -104,3 +145,4 @@ export default function Header() {
     </header>
   );
 }
+
