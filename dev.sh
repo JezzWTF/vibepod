@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # VibePod dev launcher
 # Starts all services and kills the entire process group cleanly on Ctrl+C.
+#
+# Usage:
+#   ./dev.sh        — start with CUDA (default)
+#   ./dev.sh --cpu  — start server in CPU-only mode (separate .venv-cpu)
 
 set -uo pipefail
 
@@ -16,10 +20,13 @@ prefix() {
     done
 }
 
+# Forward any flags (e.g. --cpu) straight to start.sh
+SERVER_FLAGS=("$@")
+
 echo "Starting VibePod — Ctrl+C to stop all"
 echo ""
 
-bash server/start.sh  2>&1 | prefix "[SERVER]" "$CY" &
+bash server/start.sh "${SERVER_FLAGS[@]+${SERVER_FLAGS[@]}}" 2>&1 | prefix "[SERVER]" "$CY" &
 pnpm --filter vibepod-web dev 2>&1 | prefix "[WEB]"    "$MG" &
 
 wait
