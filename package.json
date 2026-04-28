@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "bash dev.sh",
+    "dev:cpu": "bash dev.sh --cpu",
     "dev:server": "bash server/start.sh",
+    "dev:server:cpu": "bash server/start.sh --cpu",
     "dev:web": "pnpm --filter vibepod-web dev",
     "build": "pnpm --filter vibepod-web build"
   },
