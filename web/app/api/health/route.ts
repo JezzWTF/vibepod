@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+const OFFLINE_RESPONSE = { status: "offline" };
+const COMMON_OPTIONS = { headers: { "Cache-Control": "no-store" } };
+
 export async function GET() {
   const pythonServerUrl =
     process.env.VIBEVOICE_SERVER_URL ?? "http://localhost:8000";
@@ -24,17 +27,11 @@ export async function GET() {
           progress: data.progress ?? null,
           voices: data.voices ?? [],
         },
-        { headers: { "Cache-Control": "no-store" } }
+        COMMON_OPTIONS
       );
     }
-    return NextResponse.json(
-      { status: "offline" },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json(OFFLINE_RESPONSE, COMMON_OPTIONS);
   } catch {
-    return NextResponse.json(
-      { status: "offline" },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json(OFFLINE_RESPONSE, COMMON_OPTIONS);
   }
 }
