@@ -1,5 +1,6 @@
 # Python
 server/.venv/
+server/.venv-cpu/
 server/voices/
 server/__pycache__/
 **/__pycache__/
