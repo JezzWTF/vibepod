@@ -218,7 +218,7 @@ def _load_model_sync() -> None:
 
         except Exception as exc:
             _model_status = "error"
-            _model_error = str(exc)
+            _model_error = "Internal server error during model initialization."
             logger.exception("Failed to initialise model: %s", exc)
 
 
@@ -382,7 +382,7 @@ async def generate(req: GenerateRequest, request: Request) -> StreamingResponse:
                 return
             except Exception as exc:
                 logger.exception("Generation failed: %s", exc)
-                yield _sse({"type": "error", "message": str(exc)})
+                yield _sse({"type": "error", "message": "Internal server error during generation."})
                 return
 
         elapsed = round(time.monotonic() - start, 1)
