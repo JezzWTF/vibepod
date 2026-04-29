@@ -35,12 +35,36 @@ export function useAudioPlayer(audioUrl: string | null) {
     const controller = new AbortController();
     const { signal } = controller;
 
-    audio.addEventListener("timeupdate", () => setState((prev) => ({ ...prev, currentTime: audio.currentTime })), { signal });
-    audio.addEventListener("durationchange", () => setState((prev) => ({ ...prev, duration: audio.duration })), { signal });
-    audio.addEventListener("loadedmetadata", () => setState((prev) => ({ ...prev, duration: audio.duration })), { signal });
-    audio.addEventListener("ended", () => setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 })), { signal });
-    audio.addEventListener("play", () => setState((prev) => ({ ...prev, isPlaying: true })), { signal });
-    audio.addEventListener("pause", () => setState((prev) => ({ ...prev, isPlaying: false })), { signal });
+    audio.addEventListener(
+      "timeupdate",
+      () => setState((prev) => ({ ...prev, currentTime: audio.currentTime })),
+      { signal }
+    );
+    audio.addEventListener(
+      "durationchange",
+      () => setState((prev) => ({ ...prev, duration: audio.duration })),
+      { signal }
+    );
+    audio.addEventListener(
+      "loadedmetadata",
+      () => setState((prev) => ({ ...prev, duration: audio.duration })),
+      { signal }
+    );
+    audio.addEventListener(
+      "ended",
+      () => setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 })),
+      { signal }
+    );
+    audio.addEventListener(
+      "play",
+      () => setState((prev) => ({ ...prev, isPlaying: true })),
+      { signal }
+    );
+    audio.addEventListener(
+      "pause",
+      () => setState((prev) => ({ ...prev, isPlaying: false })),
+      { signal }
+    );
 
     return () => {
       audio.pause();
