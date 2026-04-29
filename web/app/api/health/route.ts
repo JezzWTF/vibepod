@@ -23,6 +23,7 @@ export async function GET() {
       return NextResponse.json(
         {
           status,
+          device: data.device ?? null,
           message: data.message,
           progress: data.progress ?? null,
           voices: data.voices ?? [],

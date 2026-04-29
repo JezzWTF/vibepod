@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 type ServerStatus = "checking" | "downloading" | "loading" | "online" | "error" | "offline";
+type Device = "cpu" | "cuda" | null;
 
 // Polling intervals: poll quickly until the server is online, then slow down.
 const FAST_INTERVAL_MS = 3000;   // while checking / loading
@@ -10,6 +11,7 @@ const SLOW_INTERVAL_MS = 30000;  // once online
 
 export default function Header() {
   const [status, setStatus] = useState<ServerStatus>("checking");
+  const [device, setDevice] = useState<Device>(null);
   const [message, setMessage] = useState<string | undefined>();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -20,6 +22,7 @@ export default function Header() {
         const data = await res.json();
         const newStatus: ServerStatus = (data.status as ServerStatus) ?? "offline";
         setStatus(newStatus);
+        setDevice((data.device as Device) ?? null);
         setMessage(data.message);
 
         // Switch to slow polling once we know the server is online
@@ -34,6 +37,7 @@ export default function Header() {
         }
       } catch {
         setStatus("offline");
+        setDevice(null);
         setMessage(undefined);
       }
     };
@@ -90,6 +94,25 @@ export default function Header() {
 
   const cfg = statusConfig[status];
 
+  // Device badge — only shown once the server is online and device is known
+  const deviceBadge = status === "online" && device ? (
+    <span
+      className="px-2 py-0.5 rounded-full text-xs font-semibold tracking-wide uppercase"
+      style={{
+        background: device === "cuda"
+          ? "var(--accent-violet-dim)"
+          : "var(--accent-teal-dim)",
+        color: device === "cuda"
+          ? "var(--accent-violet)"
+          : "var(--accent-teal)",
+        border: `1px solid ${device === "cuda" ? "var(--accent-violet-dim)" : "var(--accent-teal-dim)"}`,
+      }}
+      title={device === "cuda" ? "Running on NVIDIA GPU" : "Running on CPU"}
+    >
+      {device.toUpperCase()}
+    </span>
+  ) : null;
+
   return (
     <header
       className="border-b px-6 py-4 flex items-center justify-between"
@@ -128,27 +151,29 @@ export default function Header() {
         </div>
       </div>
 
-      <div
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${cfg.ring}`}
-        style={{
-          background: "var(--background)",
-          borderColor: "var(--border)",
-        }}
-        title={message}
-      >
-        <span className="relative flex h-2 w-2">
-          {cfg.pulse && (
+      <div className="flex items-center gap-2">
+        {deviceBadge}
+        <div
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${cfg.ring}`}
+          style={{
+            background: "var(--background)",
+            borderColor: "var(--border)",
+          }}
+          title={message}
+        >
+          <span className="relative flex h-2 w-2">
+            {cfg.pulse && (
+              <span
+                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.color}`}
+              />
+            )}
             <span
-              className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.color}`}
+              className={`relative inline-flex rounded-full h-2 w-2 ${cfg.color}`}
             />
-          )}
-          <span
-            className={`relative inline-flex rounded-full h-2 w-2 ${cfg.color}`}
-          />
-        </span>
-        <span style={{ color: "var(--foreground)" }}>{cfg.label}</span>
+          </span>
+          <span style={{ color: "var(--foreground)" }}>{cfg.label}</span>
+        </div>
       </div>
     </header>
   );
 }
-
