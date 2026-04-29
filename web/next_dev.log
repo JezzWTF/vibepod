@@ -1,0 +1,18 @@
+
+> vibepod-web@0.1.0 dev /app/web
+> next dev --turbopack
+
+   ▲ Next.js 15.5.15 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.2:3000
+
+ ✓ Starting...
+ ✓ Ready in 4.2s
+ ○ Compiling / ...
+ ✓ Compiled / in 7.8s
+ GET / 200 in 8922ms
+ GET / 200 in 443ms
+ ○ Compiling /api/health ...
+ ✓ Compiled /api/health in 923ms
+ GET /api/health 200 in 1479ms
+ GET /api/health 200 in 1480ms

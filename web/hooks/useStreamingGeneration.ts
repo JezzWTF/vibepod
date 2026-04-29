@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SAMPLE_RATE = 24_000;
-const PREBUFFER_SECS = 2.0;
-const REBUFFER_THRESHOLD_SECS = 0.4;
-const RESUME_THRESHOLD_SECS = 1.5;
+const DEFAULT_PREBUFFER_SECS = 2.0;
+const DEFAULT_REBUFFER_THRESHOLD_SECS = 0.4;
+const DEFAULT_RESUME_THRESHOLD_SECS = 1.5;
 
 interface GenerateOptions {
   text: string;
@@ -21,6 +21,9 @@ interface UseStreamingGenerationOptions {
   onSuccess: (audioUrl: string) => void;
   onCancel: () => void;
   onError: () => void;
+  prebufferSecs?: number;
+  rebufferThresholdSecs?: number;
+  resumeThresholdSecs?: number;
 }
 
 function mergeFloat32Arrays(chunks: Float32Array<ArrayBuffer>[]): Float32Array<ArrayBuffer> {
@@ -77,6 +80,9 @@ export function useStreamingGeneration({
   onSuccess,
   onCancel,
   onError,
+  prebufferSecs = DEFAULT_PREBUFFER_SECS,
+  rebufferThresholdSecs = DEFAULT_REBUFFER_THRESHOLD_SECS,
+  resumeThresholdSecs = DEFAULT_RESUME_THRESHOLD_SECS,
 }: UseStreamingGenerationOptions) {
   const [isStreamPaused, setIsStreamPaused] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -144,7 +150,7 @@ export function useStreamingGeneration({
 
     if (!hasStartedPlaybackRef.current) {
       const bufferedSecs = chunksRef.current.reduce((sum, c) => sum + c.length, 0) / SAMPLE_RATE;
-      if (bufferedSecs >= PREBUFFER_SECS) {
+      if (bufferedSecs >= prebufferSecs) {
         flushBufferedAudio();
       }
       return;
@@ -154,18 +160,18 @@ export function useStreamingGeneration({
     if (isUserPausedRef.current) return;
 
     const ahead = nextStartTimeRef.current - ctx.currentTime;
-    if (ctx.state === "running" && ahead < REBUFFER_THRESHOLD_SECS) {
+    if (ctx.state === "running" && ahead < rebufferThresholdSecs) {
       ctx.suspend().catch(() => {});
       isAutoBufferingRef.current = true;
     } else if (
       ctx.state === "suspended" &&
       isAutoBufferingRef.current &&
-      ahead >= RESUME_THRESHOLD_SECS
+      ahead >= resumeThresholdSecs
     ) {
       ctx.resume().catch(() => {});
       isAutoBufferingRef.current = false;
     }
-  }, [enqueue, flushBufferedAudio]);
+  }, [enqueue, flushBufferedAudio, prebufferSecs, rebufferThresholdSecs, resumeThresholdSecs]);
 
   const generate = useCallback(async (options: GenerateOptions) => {
     if (!options.text.trim()) return;

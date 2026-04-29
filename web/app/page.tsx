@@ -15,6 +15,14 @@ export interface DownloadProgress {
   total: number;
 }
 
+export interface ServerConfig {
+  chunk_accum: number;
+  prebuffer_secs: number;
+  rebuffer_threshold_secs: number;
+  resume_threshold_secs: number;
+  default_inference_steps: number;
+}
+
 interface AppState {
   script: string;
   speaker: string;
@@ -28,6 +36,7 @@ interface AppState {
   serverStatus: ServerStatus;
   downloadProgress: DownloadProgress | null;
   availableVoices: string[];
+  serverConfig: ServerConfig | null;
 }
 
 type AppAction =
@@ -43,7 +52,12 @@ type AppAction =
   | { type: "ADD_LOG"; payload: string }
   | {
       type: "SET_SERVER_STATUS";
-      payload: { status: ServerStatus; progress?: DownloadProgress | null; voices?: string[] };
+      payload: {
+        status: ServerStatus;
+        progress?: DownloadProgress | null;
+        voices?: string[];
+        config?: ServerConfig | null;
+      };
     };
 
 function reducer(state: AppState, action: AppAction): AppState {
@@ -63,14 +77,22 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, isGenerating: false, genElapsed: 0, genPct: null };
     case "ADD_LOG":
       return { ...state, logs: [...state.logs, action.payload] };
-    case "SET_SERVER_STATUS":
+    case "SET_SERVER_STATUS": {
+      const nextSteps =
+        !state.serverConfig && action.payload.config
+          ? action.payload.config.default_inference_steps
+          : state.inferenceSteps;
       return {
         ...state,
         serverStatus: action.payload.status,
         downloadProgress: action.payload.progress ?? null,
-        availableVoices:
-          action.payload.voices?.length ? action.payload.voices : state.availableVoices,
+        availableVoices: action.payload.voices?.length
+          ? action.payload.voices
+          : state.availableVoices,
+        serverConfig: action.payload.config ?? state.serverConfig,
+        inferenceSteps: nextSteps,
       };
+    }
     default: return state;
   }
 }
@@ -88,6 +110,7 @@ const initialState: AppState = {
   serverStatus: "offline",
   downloadProgress: null,
   availableVoices: [],
+  serverConfig: null,
 };
 
 export default function HomePage() {
@@ -106,19 +129,16 @@ export default function HomePage() {
   const handleGenerationCancel = useCallback(() => dispatch({ type: "GENERATION_CANCELLED" }), []);
   const handleGenerationError = useCallback(() => dispatch({ type: "GENERATION_ERROR" }), []);
 
-  const {
-    generate,
-    pauseStream,
-    resumeStream,
-    stop,
-    isStreamPaused,
-  } = useStreamingGeneration({
+  const { generate, pauseStream, resumeStream, stop, isStreamPaused } = useStreamingGeneration({
     onLog: addLog,
     onStart: handleGenerationStart,
     onProgress: handleGenerationProgress,
     onSuccess: handleGenerationSuccess,
     onCancel: handleGenerationCancel,
     onError: handleGenerationError,
+    prebufferSecs: state.serverConfig?.prebuffer_secs,
+    rebufferThresholdSecs: state.serverConfig?.rebuffer_threshold_secs,
+    resumeThresholdSecs: state.serverConfig?.resume_threshold_secs,
   });
 
   // Server health polling — fast while not ready, slow when online
@@ -131,21 +151,32 @@ export default function HomePage() {
       let nextStatus: ServerStatus = "offline";
       let nextProgress: DownloadProgress | null = null;
       let nextVoices: string[] = [];
+      let nextConfig: ServerConfig | null = null;
       try {
         const res = await fetch("/api/health", { cache: "no-store" });
-        const data = await res.json() as {
+        const data = (await res.json()) as {
           status: ServerStatus;
           progress?: DownloadProgress | null;
           voices?: string[];
+          config?: ServerConfig;
         };
         nextStatus = data.status ?? "offline";
         nextProgress = data.progress ?? null;
         nextVoices = data.voices ?? [];
+        nextConfig = data.config ?? null;
       } catch {
         nextStatus = "offline";
       }
       if (!cancelled) {
-        dispatch({ type: "SET_SERVER_STATUS", payload: { status: nextStatus, progress: nextProgress, voices: nextVoices } });
+        dispatch({
+          type: "SET_SERVER_STATUS",
+          payload: {
+            status: nextStatus,
+            progress: nextProgress,
+            voices: nextVoices,
+            config: nextConfig,
+          },
+        });
         timeoutId = setTimeout(poll, nextStatus === "online" ? 15_000 : 2_000);
       }
     }

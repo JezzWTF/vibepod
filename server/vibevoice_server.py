@@ -52,11 +52,11 @@ VOICE_BASE_URL = (
 
 EN_VOICES: dict[str, str] = {
     "carter": "en-Carter_man.pt",
-    "davis":  "en-Davis_man.pt",
-    "emma":   "en-Emma_woman.pt",
-    "frank":  "en-Frank_man.pt",
-    "grace":  "en-Grace_woman.pt",
-    "mike":   "en-Mike_man.pt",
+    "davis": "en-Davis_man.pt",
+    "emma": "en-Emma_woman.pt",
+    "frank": "en-Frank_man.pt",
+    "grace": "en-Grace_woman.pt",
+    "mike": "en-Mike_man.pt",
 }
 DEFAULT_SPEAKER = "carter"
 
@@ -65,6 +65,7 @@ _IGNORE_PATTERNS = ["*.msgpack", "flax_model*", "tf_model*", "rust_model*", "*.o
 # ── Device selection ────────────────────────────────────────────────────────────
 # VIBEPOD_DEVICE env var is set by start.sh based on the --cpu / --cuda flag.
 # Falls back to auto-detection if not set.
+
 
 def _resolve_device() -> str:
     """Resolve the target device from env var or auto-detect."""
@@ -93,12 +94,22 @@ _voice_presets: dict[str, object] = {}
 _load_lock = threading.Lock()
 _generation_lock = asyncio.Lock()
 
+# Config defaults (can be overridden by env vars)
+# These are populated in _load_model_sync once the device is known.
+_config = {
+    "chunk_accum": 1,
+    "prebuffer_secs": 2.0,
+    "rebuffer_threshold_secs": 0.4,
+    "resume_threshold_secs": 1.5,
+    "default_inference_steps": 10,
+}
+
 # Download progress (files downloaded so far)
 _dl_progress: dict[str, int] = {"done": 0, "total": 0}
 
 
-
 # ── Progress-tracking tqdm (for model file downloads) ──────────────────────────
+
 
 def _make_dl_tqdm() -> type:
     class _DlTqdm(_BaseTqdm):
@@ -119,10 +130,14 @@ def _make_dl_tqdm() -> type:
 
 # ── Model / voice helpers ───────────────────────────────────────────────────────
 
+
 def _is_model_cached() -> bool:
     try:
         from huggingface_hub import snapshot_download
-        snapshot_download(MODEL_ID, local_files_only=True, ignore_patterns=_IGNORE_PATTERNS)
+
+        snapshot_download(
+            MODEL_ID, local_files_only=True, ignore_patterns=_IGNORE_PATTERNS
+        )
         return True
     except Exception:
         return False
@@ -130,7 +145,10 @@ def _is_model_cached() -> bool:
 
 def _download_model() -> None:
     from huggingface_hub import snapshot_download
-    token: Optional[str] = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+
+    token: Optional[str] = os.environ.get("HF_TOKEN") or os.environ.get(
+        "HUGGINGFACE_TOKEN"
+    )
     DlTqdm = _make_dl_tqdm()
     logger.info("Model not cached — downloading %s...", MODEL_ID)
     snapshot_download(
@@ -155,11 +173,13 @@ def _download_voices() -> None:
 
 # ── Background model loader ─────────────────────────────────────────────────────
 
+
 def _init_processor():
     logger.info("Loading processor...")
     from vibevoice.processor.vibevoice_streaming_processor import (
         VibeVoiceStreamingProcessor,
     )
+
     return VibeVoiceStreamingProcessor.from_pretrained(MODEL_ID)
 
 
@@ -171,6 +191,7 @@ def _init_model(device: str):
     from vibevoice.modular.modeling_vibevoice_streaming_inference import (
         VibeVoiceStreamingForConditionalGenerationInference,
     )
+
     try:
         model = VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
             MODEL_ID,
@@ -179,7 +200,9 @@ def _init_model(device: str):
             attn_implementation=attn_impl,
         )
     except Exception:
-        logger.warning("Model load with %s failed; falling back to sdpa", attn_impl, exc_info=True)
+        logger.warning(
+            "Model load with %s failed; falling back to sdpa", attn_impl, exc_info=True
+        )
         model = VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
             MODEL_ID,
             torch_dtype=load_dtype,
@@ -197,14 +220,12 @@ def _load_voice_presets(device: str) -> dict[str, object]:
     for name, filename in EN_VOICES.items():
         path = VOICES_DIR / filename
         if path.exists():
-            presets[name] = torch.load(
-                path, map_location=device, weights_only=False
-            )
+            presets[name] = torch.load(path, map_location=device, weights_only=False)
     return presets
 
 
 def _load_model_sync() -> None:
-    global _processor, _model, _device, _model_status, _model_error, _voice_presets
+    global _processor, _model, _device, _model_status, _model_error, _voice_presets, _config
 
     with _load_lock:
         if _model is not None:
@@ -222,12 +243,35 @@ def _load_model_sync() -> None:
             _device = _resolve_device()
             logger.info("Using device: %s", _device)
 
+            # Populate config based on device
+            is_cpu = _device == "cpu"
+            _config["chunk_accum"] = int(
+                os.environ.get("VIBEPOD_CHUNK_ACCUM", 4 if is_cpu else 1)
+            )
+            _config["prebuffer_secs"] = float(
+                os.environ.get("VIBEPOD_PREBUFFER_SECS", 5.0 if is_cpu else 2.0)
+            )
+            _config["rebuffer_threshold_secs"] = float(
+                os.environ.get(
+                    "VIBEPOD_REBUFFER_THRESHOLD_SECS", 1.0 if is_cpu else 0.4
+                )
+            )
+            _config["resume_threshold_secs"] = float(
+                os.environ.get("VIBEPOD_RESUME_THRESHOLD_SECS", 2.5 if is_cpu else 1.5)
+            )
+            _config["default_inference_steps"] = int(
+                os.environ.get("VIBEPOD_DEFAULT_INFERENCE_STEPS", 8 if is_cpu else 10)
+            )
+
             _processor = _init_processor()
             _model = _init_model(_device)
             _voice_presets = _load_voice_presets(_device)
 
             _model_status = "online"
-            logger.info("Model ready on %s. Voices: %s", _device, list(_voice_presets.keys()))
+            logger.info(
+                "Model ready on %s. Voices: %s", _device, list(_voice_presets.keys())
+            )
+            logger.info("Configuration: %s", _config)
 
         except Exception as exc:
             _model_status = "error"
@@ -236,6 +280,7 @@ def _load_model_sync() -> None:
 
 
 # ── FastAPI app ─────────────────────────────────────────────────────────────────
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -249,11 +294,12 @@ app = FastAPI(title="VibePod TTS Server", version="0.1.0", lifespan=lifespan)
 
 # ── Schemas ─────────────────────────────────────────────────────────────────────
 
+
 class GenerateRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=10_000)
     speaker: str = Field(default=DEFAULT_SPEAKER)
     cfg_scale: float = Field(default=1.5, ge=0.5, le=4.0)
-    inference_steps: int = Field(default=10, ge=5, le=20)
+    inference_steps: Optional[int] = Field(default=None, ge=5, le=20)
 
     @field_validator("text")
     @classmethod
@@ -270,6 +316,7 @@ class GenerateRequest(BaseModel):
 
 # ── Endpoints ───────────────────────────────────────────────────────────────────
 
+
 @app.get("/health")
 async def health() -> dict:
     body: dict = {
@@ -277,9 +324,13 @@ async def health() -> dict:
         "model": MODEL_ID,
         "device": _device,
         "voices": list(_voice_presets.keys()),
+        "config": _config,
     }
     if _model_status == "downloading":
-        body["progress"] = {"done": _dl_progress["done"], "total": _dl_progress["total"]}
+        body["progress"] = {
+            "done": _dl_progress["done"],
+            "total": _dl_progress["total"],
+        }
     if _model_error:
         body["message"] = _model_error
     return body
@@ -300,7 +351,8 @@ def _sync_generate(
     speaker = req.speaker if req.speaker in _voice_presets else DEFAULT_SPEAKER
     voice_preset = copy.deepcopy(_voice_presets[speaker])
 
-    _model.set_ddpm_inference_steps(num_steps=req.inference_steps)
+    steps = req.inference_steps or _config["default_inference_steps"]
+    _model.set_ddpm_inference_steps(num_steps=steps)
 
     inputs = _processor.process_input_with_cached_prompt(
         text=req.text,
@@ -339,13 +391,15 @@ async def generate(req: GenerateRequest, request: Request) -> StreamingResponse:
     if _model_status != "online":
         detail = {
             "downloading": "Model is downloading — please wait.",
-            "loading":     "Model is loading into memory — please wait.",
-            "error":       f"Model failed to load: {_model_error or 'unknown error'}",
+            "loading": "Model is loading into memory — please wait.",
+            "error": f"Model failed to load: {_model_error or 'unknown error'}",
         }.get(_model_status, "Server not ready.")
         raise HTTPException(status_code=503, detail=detail)
 
     if _generation_lock.locked():
-        raise HTTPException(status_code=503, detail="Server is already generating audio. Please wait.")
+        raise HTTPException(
+            status_code=503, detail="Server is already generating audio. Please wait."
+        )
 
     async def event_stream() -> AsyncGenerator[str, None]:
         from vibevoice.modular.streamer import AsyncAudioStreamer
@@ -353,6 +407,9 @@ async def generate(req: GenerateRequest, request: Request) -> StreamingResponse:
         start = time.monotonic()
         streamer = AsyncAudioStreamer(batch_size=1)
         cancel_event = threading.Event()
+
+        accum_size = max(1, _config["chunk_accum"])
+        accumulated_chunks = []
 
         async with _generation_lock:
             loop = asyncio.get_event_loop()
@@ -382,9 +439,18 @@ async def generate(req: GenerateRequest, request: Request) -> StreamingResponse:
                 if chunk is None:  # stop signal
                     break
 
-                pcm_b64 = base64.b64encode(
-                    chunk.detach().cpu().float().numpy().tobytes()
-                ).decode()
+                accumulated_chunks.append(chunk.detach().cpu().float())
+
+                if len(accumulated_chunks) >= accum_size:
+                    combined = torch.cat(accumulated_chunks, dim=0)
+                    pcm_b64 = base64.b64encode(combined.numpy().tobytes()).decode()
+                    yield _sse({"type": "audio_chunk", "data": pcm_b64})
+                    accumulated_chunks = []
+
+            # Flush any remaining chunks
+            if accumulated_chunks:
+                combined = torch.cat(accumulated_chunks, dim=0)
+                pcm_b64 = base64.b64encode(combined.numpy().tobytes()).decode()
                 yield _sse({"type": "audio_chunk", "data": pcm_b64})
 
             try:
@@ -395,7 +461,12 @@ async def generate(req: GenerateRequest, request: Request) -> StreamingResponse:
                 return
             except Exception as exc:
                 logger.exception("Generation failed: %s", exc)
-                yield _sse({"type": "error", "message": "Internal server error during generation."})
+                yield _sse(
+                    {
+                        "type": "error",
+                        "message": "Internal server error during generation.",
+                    }
+                )
                 return
 
         elapsed = round(time.monotonic() - start, 1)

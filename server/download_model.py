@@ -36,7 +36,9 @@ def download() -> str:
         )
         sys.exit(1)
 
-    token: str | None = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+    token: str | None = os.environ.get("HF_TOKEN") or os.environ.get(
+        "HUGGINGFACE_TOKEN"
+    )
 
     print(f"Checking / downloading model: {MODEL_ID}")
     print("(This may take several minutes on first run — the model is ~1 GB)")
