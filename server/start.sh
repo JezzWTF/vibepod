@@ -72,7 +72,7 @@ fi
 #    Pass DEVICE env var so the server can select the correct torch device.
 # ---------------------------------------------------------------------------
 echo ""
-echo "--> Starting uvicorn on http://0.0.0.0:8000"
+echo "--> Starting uvicorn on http://127.0.0.1:8000"
 export PYTHONUTF8=1
 
 if $CPU_MODE; then
@@ -83,7 +83,7 @@ else
 fi
 
 exec uv run uvicorn vibevoice_server:app \
-    --host 0.0.0.0 \
+    --host 127.0.0.1 \
     --port 8000 \
     --log-level info \
     "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}"
