@@ -32,30 +32,43 @@ export function useAudioPlayer(audioUrl: string | null) {
     const audio = new Audio(audioUrl);
     audioRef.current = audio;
 
-    const onTimeUpdate = () =>
-      setState((prev) => ({ ...prev, currentTime: audio.currentTime }));
-    const onDurationChange = () =>
-      setState((prev) => ({ ...prev, duration: audio.duration }));
-    const onEnded = () =>
-      setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 }));
-    const onPlay = () => setState((prev) => ({ ...prev, isPlaying: true }));
-    const onPause = () => setState((prev) => ({ ...prev, isPlaying: false }));
+    const controller = new AbortController();
+    const { signal } = controller;
 
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("durationchange", onDurationChange);
-    audio.addEventListener("loadedmetadata", onDurationChange);
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
+    audio.addEventListener(
+      "timeupdate",
+      () => setState((prev) => ({ ...prev, currentTime: audio.currentTime })),
+      { signal }
+    );
+    audio.addEventListener(
+      "durationchange",
+      () => setState((prev) => ({ ...prev, duration: audio.duration })),
+      { signal }
+    );
+    audio.addEventListener(
+      "loadedmetadata",
+      () => setState((prev) => ({ ...prev, duration: audio.duration })),
+      { signal }
+    );
+    audio.addEventListener(
+      "ended",
+      () => setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 })),
+      { signal }
+    );
+    audio.addEventListener(
+      "play",
+      () => setState((prev) => ({ ...prev, isPlaying: true })),
+      { signal }
+    );
+    audio.addEventListener(
+      "pause",
+      () => setState((prev) => ({ ...prev, isPlaying: false })),
+      { signal }
+    );
 
     return () => {
       audio.pause();
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("durationchange", onDurationChange);
-      audio.removeEventListener("loadedmetadata", onDurationChange);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
+      controller.abort();
     };
   }, [audioUrl]);
 
