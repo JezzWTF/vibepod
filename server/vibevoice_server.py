@@ -198,7 +198,7 @@ def _load_voice_presets(device: str) -> dict[str, object]:
         path = VOICES_DIR / filename
         if path.exists():
             presets[name] = torch.load(
-                path, map_location=device, weights_only=False
+                path, map_location=device, weights_only=True
             )
     return presets
 
