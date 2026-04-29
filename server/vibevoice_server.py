@@ -97,6 +97,7 @@ _generation_lock = asyncio.Lock()
 # Config defaults (can be overridden by env vars)
 # These are populated in _load_model_sync once the device is known.
 _config = {
+    "device": "cpu",
     "chunk_accum": 1,
     "prebuffer_secs": 2.0,
     "rebuffer_threshold_secs": 0.4,
@@ -245,6 +246,7 @@ def _load_model_sync() -> None:
 
             # Populate config based on device
             is_cpu = _device == "cpu"
+            _config["device"] = _device
             _config["chunk_accum"] = int(
                 os.environ.get("VIBEPOD_CHUNK_ACCUM", 4 if is_cpu else 1)
             )
