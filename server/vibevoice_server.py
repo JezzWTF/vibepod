@@ -179,7 +179,7 @@ def _init_model(device: str):
             attn_implementation=attn_impl,
         )
     except Exception:
-        logger.warning("flash_attention_2 unavailable, falling back to sdpa")
+        logger.warning("Model load with %s failed; falling back to sdpa", attn_impl, exc_info=True)
         model = VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
             MODEL_ID,
             torch_dtype=load_dtype,
