@@ -81,6 +81,31 @@ def _resolve_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+# ── Env-var helpers ─────────────────────────────────────────────────────────────
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid value for %s=%r — using default %d", name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid value for %s=%r — using default %g", name, raw, default)
+        return default
+
+
 # ── Global state ────────────────────────────────────────────────────────────────
 
 ModelStatus = Literal["downloading", "loading", "online", "error"]
@@ -212,7 +237,7 @@ def _init_model(device: str):
         )
 
     model.eval()
-    model.set_ddpm_inference_steps(num_steps=10)
+    model.set_ddpm_inference_steps(num_steps=_config["default_inference_steps"])
     return model
 
 
@@ -247,23 +272,11 @@ def _load_model_sync() -> None:
             # Populate config based on device
             is_cpu = _device == "cpu"
             _config["device"] = _device
-            _config["chunk_accum"] = int(
-                os.environ.get("VIBEPOD_CHUNK_ACCUM", 4 if is_cpu else 1)
-            )
-            _config["prebuffer_secs"] = float(
-                os.environ.get("VIBEPOD_PREBUFFER_SECS", 5.0 if is_cpu else 2.0)
-            )
-            _config["rebuffer_threshold_secs"] = float(
-                os.environ.get(
-                    "VIBEPOD_REBUFFER_THRESHOLD_SECS", 1.0 if is_cpu else 0.4
-                )
-            )
-            _config["resume_threshold_secs"] = float(
-                os.environ.get("VIBEPOD_RESUME_THRESHOLD_SECS", 2.5 if is_cpu else 1.5)
-            )
-            _config["default_inference_steps"] = int(
-                os.environ.get("VIBEPOD_DEFAULT_INFERENCE_STEPS", 8 if is_cpu else 10)
-            )
+            _config["chunk_accum"] = _env_int("VIBEPOD_CHUNK_ACCUM", 4 if is_cpu else 1)
+            _config["prebuffer_secs"] = _env_float("VIBEPOD_PREBUFFER_SECS", 5.0 if is_cpu else 2.0)
+            _config["rebuffer_threshold_secs"] = _env_float("VIBEPOD_REBUFFER_THRESHOLD_SECS", 1.0 if is_cpu else 0.4)
+            _config["resume_threshold_secs"] = _env_float("VIBEPOD_RESUME_THRESHOLD_SECS", 2.5 if is_cpu else 1.5)
+            _config["default_inference_steps"] = _env_int("VIBEPOD_DEFAULT_INFERENCE_STEPS", 8 if is_cpu else 10)
 
             _processor = _init_processor()
             _model = _init_model(_device)
@@ -353,7 +366,7 @@ def _sync_generate(
     speaker = req.speaker if req.speaker in _voice_presets else DEFAULT_SPEAKER
     voice_preset = copy.deepcopy(_voice_presets[speaker])
 
-    steps = req.inference_steps or _config["default_inference_steps"]
+    steps = req.inference_steps if req.inference_steps is not None else _config["default_inference_steps"]
     _model.set_ddpm_inference_steps(num_steps=steps)
 
     inputs = _processor.process_input_with_cached_prompt(

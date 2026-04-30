@@ -186,7 +186,10 @@ export default function GenerationControls({
       {/* Advanced Buffering toggle */}
       <div className="pt-2">
         <button
+          type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
+          aria-expanded={showAdvanced}
+          aria-controls="advanced-buffering-panel"
           className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors"
           style={{ color: showAdvanced ? "var(--accent-teal)" : "var(--muted)" }}
         >
@@ -204,7 +207,7 @@ export default function GenerationControls({
       </div>
 
       {showAdvanced && (
-        <div className="flex flex-col gap-4 pl-2 border-l" style={{ borderColor: "var(--border)" }}>
+        <div id="advanced-buffering-panel" className="flex flex-col gap-4 pl-2 border-l" style={{ borderColor: "var(--border)" }}>
           {/* Pre-buffer */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -229,7 +232,7 @@ export default function GenerationControls({
           {/* Re-buffer threshold */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+              <label htmlFor="rebuffer-threshold" className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
                 Re-buffer Threshold
               </label>
               <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
@@ -237,12 +240,19 @@ export default function GenerationControls({
               </span>
             </div>
             <input
+              id="rebuffer-threshold"
               type="range"
               min={0.1}
               max={3.0}
               step={0.1}
               value={rebufferThresholdSecs}
-              onChange={(e) => onRebufferThresholdChange(parseFloat(e.target.value))}
+              onChange={(e) => {
+                const next = parseFloat(e.target.value);
+                onRebufferThresholdChange(next);
+                if (resumeThresholdSecs <= next) {
+                  onResumeThresholdChange(parseFloat((next + 0.5).toFixed(1)));
+                }
+              }}
               className="w-full h-1"
             />
           </div>
@@ -250,7 +260,7 @@ export default function GenerationControls({
           {/* Resume threshold */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+              <label htmlFor="resume-threshold" className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
                 Resume Threshold
               </label>
               <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
@@ -258,12 +268,17 @@ export default function GenerationControls({
               </span>
             </div>
             <input
+              id="resume-threshold"
               type="range"
               min={0.5}
               max={5.0}
               step={0.1}
               value={resumeThresholdSecs}
-              onChange={(e) => onResumeThresholdChange(parseFloat(e.target.value))}
+              onChange={(e) => {
+                const next = parseFloat(e.target.value);
+                if (next <= rebufferThresholdSecs) return;
+                onResumeThresholdChange(next);
+              }}
               className="w-full h-1"
             />
           </div>
@@ -278,7 +293,7 @@ export default function GenerationControls({
         >
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${serverStatus === "offline" || serverStatus === "error" ? "" : "animate-pulse"}`}
+              className={`w-2 h-2 rounded-full shrink-0 ${serverStatus === "offline" || serverStatus === "error" ? "" : "animate-pulse"}`}
               style={{ background: STATUS_CONFIG[serverStatus].color }}
             />
             <span style={{ color: STATUS_CONFIG[serverStatus].color }}>

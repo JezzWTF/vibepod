@@ -89,7 +89,7 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, logs: [...state.logs, action.payload] };
     case "SET_SERVER_STATUS": {
       const isNewConfig = !state.serverConfig && action.payload.config;
-      const deviceChanged = state.serverConfig && action.payload.config && state.serverConfig.device !== action.payload.config.device;
+      const deviceChanged = !!(state.serverConfig && action.payload.config && state.serverConfig.device !== action.payload.config.device);
 
       const nextSteps = (isNewConfig || deviceChanged)
           ? action.payload.config!.default_inference_steps

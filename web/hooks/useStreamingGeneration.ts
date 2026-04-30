@@ -21,8 +21,11 @@ interface UseStreamingGenerationOptions {
   onSuccess: (audioUrl: string) => void;
   onCancel: () => void;
   onError: () => void;
+  /** Seconds of audio to buffer before playback starts. */
   prebufferSecs?: number;
+  /** Buffer lookahead (seconds) below which playback suspends to refill. */
   rebufferThresholdSecs?: number;
+  /** Buffer lookahead (seconds) at or above which suspended playback resumes. Must be > rebufferThresholdSecs. */
   resumeThresholdSecs?: number;
 }
 
@@ -81,9 +84,17 @@ export function useStreamingGeneration({
   onCancel,
   onError,
   prebufferSecs = DEFAULT_PREBUFFER_SECS,
-  rebufferThresholdSecs = DEFAULT_REBUFFER_THRESHOLD_SECS,
-  resumeThresholdSecs = DEFAULT_RESUME_THRESHOLD_SECS,
+  rebufferThresholdSecs: rawRebufferThresholdSecs = DEFAULT_REBUFFER_THRESHOLD_SECS,
+  resumeThresholdSecs: rawResumeThresholdSecs = DEFAULT_RESUME_THRESHOLD_SECS,
 }: UseStreamingGenerationOptions) {
+  let rebufferThresholdSecs = rawRebufferThresholdSecs;
+  let resumeThresholdSecs = rawResumeThresholdSecs;
+  if (resumeThresholdSecs <= rebufferThresholdSecs) {
+    console.warn(
+      `[useStreamingGeneration] resumeThresholdSecs (${resumeThresholdSecs}) must be greater than rebufferThresholdSecs (${rebufferThresholdSecs}). Clamping resumeThresholdSecs to ${rebufferThresholdSecs + 0.5}.`,
+    );
+    resumeThresholdSecs = rebufferThresholdSecs + 0.5;
+  }
   const [isStreamPaused, setIsStreamPaused] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
