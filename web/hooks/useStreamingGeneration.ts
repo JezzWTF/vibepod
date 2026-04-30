@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SAMPLE_RATE = 24_000;
-const DEFAULT_PREBUFFER_SECS = 2.0;
-const DEFAULT_REBUFFER_THRESHOLD_SECS = 0.4;
-const DEFAULT_RESUME_THRESHOLD_SECS = 1.5;
+const DEFAULT_PREBUFFER_SECS = 5.0;
+const DEFAULT_REBUFFER_THRESHOLD_SECS = 1.0;
+const DEFAULT_RESUME_THRESHOLD_SECS = 3.0;
+const MAX_ADAPTIVE_RESUME_SECS = 18.0;
 
 interface GenerateOptions {
   text: string;
@@ -104,6 +105,10 @@ export function useStreamingGeneration({
   const isAutoBufferingRef = useRef(false);
   const isUserPausedRef = useRef(false);
   const audioUrlRef = useRef<string | null>(null);
+  const firstChunkSeenRef = useRef(false);
+  const underrunCountRef = useRef(0);
+  const totalAudioSamplesRef = useRef(0);
+  const adaptiveResumeSecsRef = useRef(DEFAULT_RESUME_THRESHOLD_SECS);
 
   const revokeCurrentUrl = useCallback(() => {
     if (audioUrlRef.current) {
@@ -122,8 +127,12 @@ export function useStreamingGeneration({
     hasStartedPlaybackRef.current = false;
     isAutoBufferingRef.current = false;
     isUserPausedRef.current = false;
+    firstChunkSeenRef.current = false;
+    underrunCountRef.current = 0;
+    totalAudioSamplesRef.current = 0;
+    adaptiveResumeSecsRef.current = resumeThresholdSecs;
     setIsStreamPaused(false);
-  }, []);
+  }, [resumeThresholdSecs]);
 
   useEffect(() => {
     return () => {
@@ -158,10 +167,17 @@ export function useStreamingGeneration({
     if (!ctx) return;
 
     chunksRef.current.push(chunk);
+    totalAudioSamplesRef.current += chunk.length;
+
+    if (!firstChunkSeenRef.current) {
+      firstChunkSeenRef.current = true;
+      onLog("First audio chunk received");
+    }
 
     if (!hasStartedPlaybackRef.current) {
       const bufferedSecs = chunksRef.current.reduce((sum, c) => sum + c.length, 0) / SAMPLE_RATE;
       if (bufferedSecs >= prebufferSecs) {
+        onLog(`Playback started after ${bufferedSecs.toFixed(1)}s buffered`);
         flushBufferedAudio();
       }
       return;
@@ -171,18 +187,30 @@ export function useStreamingGeneration({
     if (isUserPausedRef.current) return;
 
     const ahead = nextStartTimeRef.current - ctx.currentTime;
-    if (ctx.state === "running" && ahead < rebufferThresholdSecs) {
-      ctx.suspend().catch(() => {});
-      isAutoBufferingRef.current = true;
-    } else if (
-      ctx.state === "suspended" &&
-      isAutoBufferingRef.current &&
-      ahead >= resumeThresholdSecs
+    if (
+      ctx.state === "running" &&
+      !isAutoBufferingRef.current &&
+      ahead < rebufferThresholdSecs
     ) {
-      ctx.resume().catch(() => {});
+      isAutoBufferingRef.current = true;
+      underrunCountRef.current += 1;
+      adaptiveResumeSecsRef.current = Math.min(
+        MAX_ADAPTIVE_RESUME_SECS,
+        Math.max(resumeThresholdSecs, prebufferSecs + underrunCountRef.current * 2),
+      );
+      ctx.suspend().catch(() => {});
+      onLog(
+        `Buffer underrun ${underrunCountRef.current}; refilling to ${adaptiveResumeSecsRef.current.toFixed(1)}s`,
+      );
+    } else if (
+      isAutoBufferingRef.current &&
+      ahead >= adaptiveResumeSecsRef.current
+    ) {
       isAutoBufferingRef.current = false;
+      ctx.resume().catch(() => {});
+      onLog(`Buffer recovered with ${ahead.toFixed(1)}s queued`);
     }
-  }, [enqueue, flushBufferedAudio, prebufferSecs, rebufferThresholdSecs, resumeThresholdSecs]);
+  }, [enqueue, flushBufferedAudio, onLog, prebufferSecs, rebufferThresholdSecs, resumeThresholdSecs]);
 
   const generate = useCallback(async (options: GenerateOptions) => {
     if (!options.text.trim()) return;
@@ -239,6 +267,11 @@ export function useStreamingGeneration({
             type: "audio_chunk" | "complete" | "error" | "cancelled";
             data?: string;
             elapsed?: number;
+            audio_secs?: number;
+            realtime_factor?: number | null;
+            chunks?: number;
+            first_chunk_secs?: number | null;
+            max_chunk_gap_secs?: number;
             message?: string;
           };
 
@@ -247,12 +280,26 @@ export function useStreamingGeneration({
           } else if (event.type === "complete") {
             if (!hasStartedPlaybackRef.current) {
               flushBufferedAudio();
+            } else if (isAutoBufferingRef.current) {
+              isAutoBufferingRef.current = false;
+              audioCtxRef.current?.resume().catch(() => {});
             }
             const wavBlob = buildWav(mergeFloat32Arrays(chunksRef.current), SAMPLE_RATE);
             const audioUrl = URL.createObjectURL(wavBlob);
             audioUrlRef.current = audioUrl;
             const kb = (wavBlob.size / 1024).toFixed(0);
-            onLog(`Done in ${event.elapsed}s - ${kb} KB`);
+            const audioSecs = event.audio_secs ?? totalAudioSamplesRef.current / SAMPLE_RATE;
+            const realtimeFactor =
+              event.realtime_factor ??
+              (event.elapsed && event.elapsed > 0 ? audioSecs / event.elapsed : null);
+            const speedText =
+              realtimeFactor === null ? "" : ` - ${realtimeFactor.toFixed(2)}x realtime`;
+            onLog(`Done in ${event.elapsed}s - ${audioSecs.toFixed(1)}s audio${speedText} - ${kb} KB`);
+            if (event.chunks && event.first_chunk_secs !== undefined) {
+              onLog(
+                `Stream: first chunk ${event.first_chunk_secs}s, ${event.chunks} chunks, max gap ${event.max_chunk_gap_secs}s`,
+              );
+            }
             onSuccess(audioUrl);
           } else if (event.type === "cancelled") {
             throw new DOMException("Generation cancelled", "AbortError");

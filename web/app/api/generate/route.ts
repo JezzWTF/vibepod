@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function POST(request: NextRequest) {
   const pythonServerUrl = process.env.VIBEVOICE_SERVER_URL ?? "http://localhost:8000";
 
@@ -24,6 +27,7 @@ export async function POST(request: NextRequest) {
         cfg_scale: body.cfg_scale ?? 1.5,
         inference_steps: body.inference_steps ?? 10,
       }),
+      signal: request.signal,
     });
 
     if (!upstream.ok) {
@@ -36,8 +40,9 @@ export async function POST(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
+        "X-Content-Type-Options": "nosniff",
         "X-Accel-Buffering": "no",
       },
     });

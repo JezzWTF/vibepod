@@ -27,6 +27,7 @@ export async function GET() {
           message: data.message,
           progress: data.progress ?? null,
           voices: data.voices ?? [],
+          config: data.config ?? null,
         },
         COMMON_OPTIONS
       );
