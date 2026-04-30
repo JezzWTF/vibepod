@@ -8,7 +8,8 @@ dependencies = [
     # To switch back to CPU-only, remove the [tool.uv.sources] torch entry below.
     "torch>=2.0.0",
     # VibeVoice custom model + processor classes (not yet in upstream transformers)
-    "vibevoice @ git+https://github.com/microsoft/VibeVoice.git",
+    # Uses JezzWTF/VibeVoice fork so VibePod-specific optimisations land here.
+    "vibevoice @ git+https://github.com/JezzWTF/VibeVoice.git",
     # Exact version required by vibevoice's streaming TTS module
     "transformers==4.51.3",
     "fastapi>=0.111.0",

@@ -66,9 +66,12 @@ DEFAULT_SPEAKER = "carter"
 
 _IGNORE_PATTERNS = ["*.msgpack", "flax_model*", "tf_model*", "rust_model*", "*.ot"]
 
-# ── Decode pipeline executor ────────────────────────────────────────────────────
+# ── Pipeline executors ─────────────────────────────────────────────────────────
+# _decode_executor: overlaps acoustic_decode with forward_tts_lm (1 worker).
+# _cfg_executor:    runs positive + negative forward_tts_lm in parallel (1 worker).
 
 _decode_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_cfg_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
 # ── Device selection ────────────────────────────────────────────────────────────
 # VIBEPOD_DEVICE env var is set by start.sh based on the --cpu / --cuda flag.
@@ -543,41 +546,38 @@ def _install_generation_optimizations(model: object) -> None:
 
 
 def _install_cpu_pipeline_optimizations(model: object) -> None:
-    """Install the async-decode generate() patch and its thread pool on the model instance.
+    """Attach pipeline executors to the model for the optimised generate() loop.
 
-    The VibeVoice inner loop runs:
-      decode(speech_latent) → append → put → connector → tts_lm(pos) → tts_lm(neg)
+    The JezzWTF/VibeVoice fork's generate() checks for two optional attributes:
 
-    connector and both tts_lm calls only need speech_latent/acoustic_embed, not
-    audio_chunk.  The patched generate() reorders this to:
-      submit decode to thread → connector → tts_lm(pos) → tts_lm(neg)
-                                          → wait for decode future → append → put
+      model._vibepod_decode_executor  — ThreadPoolExecutor (1 worker) used to
+          overlap acoustic_decode with acoustic_connector + forward_tts_lm.
 
-    The patch is applied as an instance method via types.MethodType, which shadows
-    the class-level generate() and is immune to uv sync reinstalling the package.
+      model._vibepod_cfg_executor     — ThreadPoolExecutor (1 worker) used to
+          run the positive and negative forward_tts_lm calls in parallel, so
+          both CFG passes execute concurrently instead of sequentially.
+
+    Both are None by default, making the fork's generate() behave identically
+    to upstream on CUDA or any machine where these aren't set.
     """
-    global _decode_executor
+    global _decode_executor, _cfg_executor
 
     if os.environ.get("VIBEPOD_ASYNC_DECODE", "1") != "1":
-        logger.info("CPU async decode disabled via VIBEPOD_ASYNC_DECODE=0.")
-        return
-
-    try:
-        import vibevoice_generate_patch
-    except ImportError:
-        logger.warning(
-            "vibevoice_generate_patch not found — async decode unavailable. "
-            "Ensure vibevoice_generate_patch.py is in the server directory."
-        )
+        logger.info("CPU async decode/CFG parallelism disabled via VIBEPOD_ASYNC_DECODE=0.")
         return
 
     _decode_executor = concurrent.futures.ThreadPoolExecutor(
         max_workers=1, thread_name_prefix="vibepod-decode"
     )
-    vibevoice_generate_patch.install(model, _decode_executor)
+    _cfg_executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="vibepod-cfg"
+    )
+    model._vibepod_decode_executor = _decode_executor
+    model._vibepod_cfg_executor = _cfg_executor
     logger.info(
-        "CPU pipeline: patched generate() installed (async decode enabled) — "
-        "acoustic_decode overlaps forward_tts_lm. Disable with VIBEPOD_ASYNC_DECODE=0."
+        "CPU pipeline: decode executor and CFG executor attached — "
+        "acoustic_decode overlaps tts_lm, pos/neg CFG runs in parallel. "
+        "Disable with VIBEPOD_ASYNC_DECODE=0."
     )
 
 
@@ -688,6 +688,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     if _decode_executor is not None:
         _decode_executor.shutdown(wait=False)
+    if _cfg_executor is not None:
+        _cfg_executor.shutdown(wait=False)
 
 
 app = FastAPI(title="VibePod TTS Server", version="0.1.0", lifespan=lifespan)
