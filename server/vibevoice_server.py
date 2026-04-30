@@ -66,12 +66,10 @@ DEFAULT_SPEAKER = "carter"
 
 _IGNORE_PATTERNS = ["*.msgpack", "flax_model*", "tf_model*", "rust_model*", "*.ot"]
 
-# ── Pipeline executors ─────────────────────────────────────────────────────────
-# _decode_executor: overlaps acoustic_decode with forward_tts_lm (1 worker).
-# _cfg_executor:    runs positive + negative forward_tts_lm in parallel (1 worker).
+# ── Pipeline executor ──────────────────────────────────────────────────────────
+# Overlaps acoustic_decode with forward_tts_lm on a background thread (1 worker).
 
 _decode_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
-_cfg_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
 # ── Device selection ────────────────────────────────────────────────────────────
 # VIBEPOD_DEVICE env var is set by start.sh based on the --cpu / --cuda flag.
@@ -546,38 +544,37 @@ def _install_generation_optimizations(model: object) -> None:
 
 
 def _install_cpu_pipeline_optimizations(model: object) -> None:
-    """Attach pipeline executors to the model for the optimised generate() loop.
+    """Attach the decode executor to the model for the optimised generate() loop.
 
     The JezzWTF/VibeVoice fork's generate() checks for two optional attributes:
 
-      model._vibepod_decode_executor  — ThreadPoolExecutor (1 worker) used to
-          overlap acoustic_decode with acoustic_connector + forward_tts_lm.
+      model._vibepod_decode_executor  — ThreadPoolExecutor (1 worker) that
+          overlaps acoustic_decode with acoustic_connector + forward_tts_lm.
+          Profiling showed this hides ~72s of decode cost behind tts_lm work,
+          capturing ~96% of the theoretical overlap savings.
 
-      model._vibepod_cfg_executor     — ThreadPoolExecutor (1 worker) used to
-          run the positive and negative forward_tts_lm calls in parallel, so
-          both CFG passes execute concurrently instead of sequentially.
+      model._vibepod_cfg_executor     — intentionally NOT set. Parallel pos/neg
+          forward_tts_lm via a second thread causes MKL OpenMP thread-pool
+          contention on CPU: both threads compete for the same OMP worker pool,
+          making each call slower rather than faster. Net effect: ~6% regression.
+          The hook remains in the fork for potential GPU or future use.
 
-    Both are None by default, making the fork's generate() behave identically
-    to upstream on CUDA or any machine where these aren't set.
+    Attributes default to None, so the fork's generate() falls back to the
+    original sequential behaviour on CUDA or any non-VibePod install.
     """
-    global _decode_executor, _cfg_executor
+    global _decode_executor
 
     if os.environ.get("VIBEPOD_ASYNC_DECODE", "1") != "1":
-        logger.info("CPU async decode/CFG parallelism disabled via VIBEPOD_ASYNC_DECODE=0.")
+        logger.info("CPU async decode disabled via VIBEPOD_ASYNC_DECODE=0.")
         return
 
     _decode_executor = concurrent.futures.ThreadPoolExecutor(
         max_workers=1, thread_name_prefix="vibepod-decode"
     )
-    _cfg_executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="vibepod-cfg"
-    )
     model._vibepod_decode_executor = _decode_executor
-    model._vibepod_cfg_executor = _cfg_executor
     logger.info(
-        "CPU pipeline: decode executor and CFG executor attached — "
-        "acoustic_decode overlaps tts_lm, pos/neg CFG runs in parallel. "
-        "Disable with VIBEPOD_ASYNC_DECODE=0."
+        "CPU pipeline: decode executor attached — acoustic_decode overlaps "
+        "tts_lm. Disable with VIBEPOD_ASYNC_DECODE=0."
     )
 
 
@@ -643,9 +640,9 @@ def _load_model_sync() -> None:
             is_cpu = _device == "cpu"
             _config["device"] = _device
             _config["chunk_accum"] = _env_int("VIBEPOD_CHUNK_ACCUM", 4 if is_cpu else 1)
-            _config["prebuffer_secs"] = _env_float("VIBEPOD_PREBUFFER_SECS", 6.0 if is_cpu else 5.0)
-            _config["rebuffer_threshold_secs"] = _env_float("VIBEPOD_REBUFFER_THRESHOLD_SECS", 1.5 if is_cpu else 1.0)
-            _config["resume_threshold_secs"] = _env_float("VIBEPOD_RESUME_THRESHOLD_SECS", 4.0 if is_cpu else 3.0)
+            _config["prebuffer_secs"] = _env_float("VIBEPOD_PREBUFFER_SECS", 24.0 if is_cpu else 5.0)
+            _config["rebuffer_threshold_secs"] = _env_float("VIBEPOD_REBUFFER_THRESHOLD_SECS", 2.0 if is_cpu else 1.0)
+            _config["resume_threshold_secs"] = _env_float("VIBEPOD_RESUME_THRESHOLD_SECS", 12.0 if is_cpu else 3.0)
             _config["default_inference_steps"] = _env_int("VIBEPOD_DEFAULT_INFERENCE_STEPS", 8 if is_cpu else 10)
             if is_cpu:
                 logical_cpus = os.cpu_count() or 1
@@ -688,8 +685,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     if _decode_executor is not None:
         _decode_executor.shutdown(wait=False)
-    if _cfg_executor is not None:
-        _cfg_executor.shutdown(wait=False)
 
 
 app = FastAPI(title="VibePod TTS Server", version="0.1.0", lifespan=lifespan)

@@ -136,7 +136,7 @@ if $CPU_MODE; then
     export VIBEPOD_DEVICE="cpu"
     export UV_PROJECT_ENVIRONMENT=".venv-cpu"
     if [[ -z "${VIBEPOD_CPU_THREADS:-}" ]]; then
-        VIBEPOD_CPU_THREADS="$(uv run --no-sources python -c "import os; print(max(1, (os.cpu_count() or 2) // 2))")"
+        VIBEPOD_CPU_THREADS="$(uv run --no-sync --no-sources python -c "import os; print(max(1, (os.cpu_count() or 2) // 2))")"
         export VIBEPOD_CPU_THREADS
     fi
     export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$VIBEPOD_CPU_THREADS}"

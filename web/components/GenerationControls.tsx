@@ -157,7 +157,7 @@ export default function GenerationControls({
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium" style={{ color: "var(--foreground)" }}>
-            Quality vs Speed
+            Speed vs Quality
           </label>
           <span
             className="text-sm font-mono px-2 py-0.5 rounded"
@@ -221,7 +221,7 @@ export default function GenerationControls({
             <input
               type="range"
               min={0.5}
-              max={10.0}
+              max={30.0}
               step={0.5}
               value={prebufferSecs}
               onChange={(e) => onPrebufferSecsChange(parseFloat(e.target.value))}
@@ -271,7 +271,7 @@ export default function GenerationControls({
               id="resume-threshold"
               type="range"
               min={0.5}
-              max={5.0}
+              max={30.0}
               step={0.1}
               value={resumeThresholdSecs}
               onChange={(e) => {

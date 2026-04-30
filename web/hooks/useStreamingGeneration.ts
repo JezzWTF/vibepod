@@ -6,7 +6,7 @@ const SAMPLE_RATE = 24_000;
 const DEFAULT_PREBUFFER_SECS = 5.0;
 const DEFAULT_REBUFFER_THRESHOLD_SECS = 1.0;
 const DEFAULT_RESUME_THRESHOLD_SECS = 3.0;
-const MAX_ADAPTIVE_RESUME_SECS = 18.0;
+const MAX_ADAPTIVE_RESUME_SECS = 30.0;
 
 interface GenerateOptions {
   text: string;
