@@ -79,7 +79,16 @@ echo ""
 if $CPU_MODE; then
     echo "--> Syncing CPU Python environment (.venv-cpu)..."
     export UV_PROJECT_ENVIRONMENT=".venv-cpu"
+    LOCK_BACKUP=""
+    if [[ -f uv.lock ]]; then
+        LOCK_BACKUP="$(mktemp)"
+        cp uv.lock "$LOCK_BACKUP"
+    fi
     uv sync --no-sources
+    if [[ -n "$LOCK_BACKUP" ]]; then
+        cp "$LOCK_BACKUP" uv.lock
+        rm -f "$LOCK_BACKUP"
+    fi
 else
     echo "--> Syncing CUDA Python environment (.venv)..."
     uv sync
@@ -126,11 +135,28 @@ export PYTHONUTF8=1
 if $CPU_MODE; then
     export VIBEPOD_DEVICE="cpu"
     export UV_PROJECT_ENVIRONMENT=".venv-cpu"
+    if [[ -z "${VIBEPOD_CPU_THREADS:-}" ]]; then
+        VIBEPOD_CPU_THREADS="$(uv run --no-sources python -c "import os; print(max(1, (os.cpu_count() or 2) // 2))")"
+        export VIBEPOD_CPU_THREADS
+    fi
+    export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$VIBEPOD_CPU_THREADS}"
+    export MKL_NUM_THREADS="${MKL_NUM_THREADS:-$VIBEPOD_CPU_THREADS}"
+    # Dynamic INT8 quantization — on by default for CPU (~22% faster, prediction_head
+    # excluded automatically to avoid regression on small fixed-size tensors).
+    # Set VIBEPOD_QUANTIZE=0 to disable if you notice audio quality differences.
+    export VIBEPOD_QUANTIZE="${VIBEPOD_QUANTIZE:-1}"
+    # Optional CPU flags:
+    #   VIBEPOD_ASYNC_DECODE=0  Disable async decode/tts_lm overlap (on by default)
+    #   VIBEPOD_CPU_BF16=1      Force bfloat16 weights (auto-detected via AVX512_BF16)
+    #   VIBEPOD_COMPILE=1       torch.compile hot paths (ineffective for autoregressive
+    #                           models on CPU — not recommended, kept for experimentation)
+    UV_RUN_ARGS=(--no-sync --no-sources)
 else
     export VIBEPOD_DEVICE="cuda"
+    UV_RUN_ARGS=()
 fi
 
-exec uv run uvicorn vibevoice_server:app \
+exec uv run "${UV_RUN_ARGS[@]}" uvicorn vibevoice_server:app \
     --host 127.0.0.1 \
     --port 8000 \
     --log-level info \
