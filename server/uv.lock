@@ -3115,7 +3115,7 @@ requires-dist = [
 [[package]]
 name = "vibevoice"
 version = "1.0.0"
-source = { git = "https://github.com/JezzWTF/VibeVoice.git#e76701f17a0d93cd612d56f0db5865a615c4d16e" }
+source = { git = "https://github.com/JezzWTF/VibeVoice.git#fe832f20e3d1638594f551a08f02253f14408dbd" }
 dependencies = [
     { name = "absl-py" },
     { name = "accelerate" },
