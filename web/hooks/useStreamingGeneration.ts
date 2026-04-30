@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SAMPLE_RATE = 24_000;
-const PREBUFFER_SECS = 2.0;
-const REBUFFER_THRESHOLD_SECS = 0.4;
-const RESUME_THRESHOLD_SECS = 1.5;
+const DEFAULT_PREBUFFER_SECS = 2.0;
+const DEFAULT_REBUFFER_THRESHOLD_SECS = 0.4;
+const DEFAULT_RESUME_THRESHOLD_SECS = 1.5;
 
 interface GenerateOptions {
   text: string;
@@ -21,6 +21,12 @@ interface UseStreamingGenerationOptions {
   onSuccess: (audioUrl: string) => void;
   onCancel: () => void;
   onError: () => void;
+  /** Seconds of audio to buffer before playback starts. */
+  prebufferSecs?: number;
+  /** Buffer lookahead (seconds) below which playback suspends to refill. */
+  rebufferThresholdSecs?: number;
+  /** Buffer lookahead (seconds) at or above which suspended playback resumes. Must be > rebufferThresholdSecs. */
+  resumeThresholdSecs?: number;
 }
 
 function mergeFloat32Arrays(chunks: Float32Array<ArrayBuffer>[]): Float32Array<ArrayBuffer> {
@@ -77,7 +83,18 @@ export function useStreamingGeneration({
   onSuccess,
   onCancel,
   onError,
+  prebufferSecs = DEFAULT_PREBUFFER_SECS,
+  rebufferThresholdSecs: rawRebufferThresholdSecs = DEFAULT_REBUFFER_THRESHOLD_SECS,
+  resumeThresholdSecs: rawResumeThresholdSecs = DEFAULT_RESUME_THRESHOLD_SECS,
 }: UseStreamingGenerationOptions) {
+  let rebufferThresholdSecs = rawRebufferThresholdSecs;
+  let resumeThresholdSecs = rawResumeThresholdSecs;
+  if (resumeThresholdSecs <= rebufferThresholdSecs) {
+    console.warn(
+      `[useStreamingGeneration] resumeThresholdSecs (${resumeThresholdSecs}) must be greater than rebufferThresholdSecs (${rebufferThresholdSecs}). Clamping resumeThresholdSecs to ${rebufferThresholdSecs + 0.5}.`,
+    );
+    resumeThresholdSecs = rebufferThresholdSecs + 0.5;
+  }
   const [isStreamPaused, setIsStreamPaused] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -144,7 +161,7 @@ export function useStreamingGeneration({
 
     if (!hasStartedPlaybackRef.current) {
       const bufferedSecs = chunksRef.current.reduce((sum, c) => sum + c.length, 0) / SAMPLE_RATE;
-      if (bufferedSecs >= PREBUFFER_SECS) {
+      if (bufferedSecs >= prebufferSecs) {
         flushBufferedAudio();
       }
       return;
@@ -154,18 +171,18 @@ export function useStreamingGeneration({
     if (isUserPausedRef.current) return;
 
     const ahead = nextStartTimeRef.current - ctx.currentTime;
-    if (ctx.state === "running" && ahead < REBUFFER_THRESHOLD_SECS) {
+    if (ctx.state === "running" && ahead < rebufferThresholdSecs) {
       ctx.suspend().catch(() => {});
       isAutoBufferingRef.current = true;
     } else if (
       ctx.state === "suspended" &&
       isAutoBufferingRef.current &&
-      ahead >= RESUME_THRESHOLD_SECS
+      ahead >= resumeThresholdSecs
     ) {
       ctx.resume().catch(() => {});
       isAutoBufferingRef.current = false;
     }
-  }, [enqueue, flushBufferedAudio]);
+  }, [enqueue, flushBufferedAudio, prebufferSecs, rebufferThresholdSecs, resumeThresholdSecs]);
 
   const generate = useCallback(async (options: GenerateOptions) => {
     if (!options.text.trim()) return;

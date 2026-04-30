@@ -15,11 +15,23 @@ export interface DownloadProgress {
   total: number;
 }
 
+export interface ServerConfig {
+  device: string;
+  chunk_accum: number;
+  prebuffer_secs: number;
+  rebuffer_threshold_secs: number;
+  resume_threshold_secs: number;
+  default_inference_steps: number;
+}
+
 interface AppState {
   script: string;
   speaker: string;
   cfgScale: number;
   inferenceSteps: number;
+  prebufferSecs: number;
+  rebufferThresholdSecs: number;
+  resumeThresholdSecs: number;
   isGenerating: boolean;
   genElapsed: number;
   genPct: number | null;
@@ -28,6 +40,7 @@ interface AppState {
   serverStatus: ServerStatus;
   downloadProgress: DownloadProgress | null;
   availableVoices: string[];
+  serverConfig: ServerConfig | null;
 }
 
 type AppAction =
@@ -35,6 +48,9 @@ type AppAction =
   | { type: "SET_SPEAKER"; payload: string }
   | { type: "SET_CFG_SCALE"; payload: number }
   | { type: "SET_INFERENCE_STEPS"; payload: number }
+  | { type: "SET_PREBUFFER_SECS"; payload: number }
+  | { type: "SET_REBUFFER_THRESHOLD"; payload: number }
+  | { type: "SET_RESUME_THRESHOLD"; payload: number }
   | { type: "START_GENERATION" }
   | { type: "GEN_PROGRESS"; elapsed: number; pct: number | null }
   | { type: "GENERATION_SUCCESS"; payload: string }
@@ -43,7 +59,12 @@ type AppAction =
   | { type: "ADD_LOG"; payload: string }
   | {
       type: "SET_SERVER_STATUS";
-      payload: { status: ServerStatus; progress?: DownloadProgress | null; voices?: string[] };
+      payload: {
+        status: ServerStatus;
+        progress?: DownloadProgress | null;
+        voices?: string[];
+        config?: ServerConfig | null;
+      };
     };
 
 function reducer(state: AppState, action: AppAction): AppState {
@@ -52,6 +73,9 @@ function reducer(state: AppState, action: AppAction): AppState {
     case "SET_SPEAKER":        return { ...state, speaker: action.payload };
     case "SET_CFG_SCALE":      return { ...state, cfgScale: action.payload };
     case "SET_INFERENCE_STEPS": return { ...state, inferenceSteps: action.payload };
+    case "SET_PREBUFFER_SECS": return { ...state, prebufferSecs: action.payload };
+    case "SET_REBUFFER_THRESHOLD": return { ...state, rebufferThresholdSecs: action.payload };
+    case "SET_RESUME_THRESHOLD": return { ...state, resumeThresholdSecs: action.payload };
     case "START_GENERATION":
       return { ...state, isGenerating: true, audioUrl: null, logs: [], genElapsed: 0, genPct: null };
     case "GEN_PROGRESS":
@@ -63,14 +87,40 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, isGenerating: false, genElapsed: 0, genPct: null };
     case "ADD_LOG":
       return { ...state, logs: [...state.logs, action.payload] };
-    case "SET_SERVER_STATUS":
+    case "SET_SERVER_STATUS": {
+      const isNewConfig = !state.serverConfig && action.payload.config;
+      const deviceChanged = !!(state.serverConfig && action.payload.config && state.serverConfig.device !== action.payload.config.device);
+
+      const nextSteps = (isNewConfig || deviceChanged)
+          ? action.payload.config!.default_inference_steps
+          : state.inferenceSteps;
+
+      const nextPrebuffer = (isNewConfig || deviceChanged)
+          ? action.payload.config!.prebuffer_secs
+          : state.prebufferSecs;
+
+      const nextRebuffer = (isNewConfig || deviceChanged)
+          ? action.payload.config!.rebuffer_threshold_secs
+          : state.rebufferThresholdSecs;
+
+      const nextResume = (isNewConfig || deviceChanged)
+          ? action.payload.config!.resume_threshold_secs
+          : state.resumeThresholdSecs;
+
       return {
         ...state,
         serverStatus: action.payload.status,
         downloadProgress: action.payload.progress ?? null,
-        availableVoices:
-          action.payload.voices?.length ? action.payload.voices : state.availableVoices,
+        availableVoices: action.payload.voices?.length
+          ? action.payload.voices
+          : state.availableVoices,
+        serverConfig: action.payload.config ?? state.serverConfig,
+        inferenceSteps: nextSteps,
+        prebufferSecs: nextPrebuffer,
+        rebufferThresholdSecs: nextRebuffer,
+        resumeThresholdSecs: nextResume,
       };
+    }
     default: return state;
   }
 }
@@ -80,6 +130,9 @@ const initialState: AppState = {
   speaker: "carter",
   cfgScale: 1.5,
   inferenceSteps: 10,
+  prebufferSecs: 2.0,
+  rebufferThresholdSecs: 0.4,
+  resumeThresholdSecs: 1.5,
   isGenerating: false,
   genElapsed: 0,
   genPct: null,
@@ -88,6 +141,7 @@ const initialState: AppState = {
   serverStatus: "offline",
   downloadProgress: null,
   availableVoices: [],
+  serverConfig: null,
 };
 
 export default function HomePage() {
@@ -106,19 +160,16 @@ export default function HomePage() {
   const handleGenerationCancel = useCallback(() => dispatch({ type: "GENERATION_CANCELLED" }), []);
   const handleGenerationError = useCallback(() => dispatch({ type: "GENERATION_ERROR" }), []);
 
-  const {
-    generate,
-    pauseStream,
-    resumeStream,
-    stop,
-    isStreamPaused,
-  } = useStreamingGeneration({
+  const { generate, pauseStream, resumeStream, stop, isStreamPaused } = useStreamingGeneration({
     onLog: addLog,
     onStart: handleGenerationStart,
     onProgress: handleGenerationProgress,
     onSuccess: handleGenerationSuccess,
     onCancel: handleGenerationCancel,
     onError: handleGenerationError,
+    prebufferSecs: state.prebufferSecs,
+    rebufferThresholdSecs: state.rebufferThresholdSecs,
+    resumeThresholdSecs: state.resumeThresholdSecs,
   });
 
   // Server health polling — fast while not ready, slow when online
@@ -131,21 +182,32 @@ export default function HomePage() {
       let nextStatus: ServerStatus = "offline";
       let nextProgress: DownloadProgress | null = null;
       let nextVoices: string[] = [];
+      let nextConfig: ServerConfig | null = null;
       try {
         const res = await fetch("/api/health", { cache: "no-store" });
-        const data = await res.json() as {
+        const data = (await res.json()) as {
           status: ServerStatus;
           progress?: DownloadProgress | null;
           voices?: string[];
+          config?: ServerConfig;
         };
         nextStatus = data.status ?? "offline";
         nextProgress = data.progress ?? null;
         nextVoices = data.voices ?? [];
+        nextConfig = data.config ?? null;
       } catch {
         nextStatus = "offline";
       }
       if (!cancelled) {
-        dispatch({ type: "SET_SERVER_STATUS", payload: { status: nextStatus, progress: nextProgress, voices: nextVoices } });
+        dispatch({
+          type: "SET_SERVER_STATUS",
+          payload: {
+            status: nextStatus,
+            progress: nextProgress,
+            voices: nextVoices,
+            config: nextConfig,
+          },
+        });
         timeoutId = setTimeout(poll, nextStatus === "online" ? 15_000 : 2_000);
       }
     }
@@ -199,6 +261,12 @@ export default function HomePage() {
               onCfgScaleChange={(v) => dispatch({ type: "SET_CFG_SCALE", payload: v })}
               inferenceSteps={state.inferenceSteps}
               onInferenceStepsChange={(v) => dispatch({ type: "SET_INFERENCE_STEPS", payload: v })}
+            prebufferSecs={state.prebufferSecs}
+            onPrebufferSecsChange={(v) => dispatch({ type: "SET_PREBUFFER_SECS", payload: v })}
+            rebufferThresholdSecs={state.rebufferThresholdSecs}
+            onRebufferThresholdChange={(v) => dispatch({ type: "SET_REBUFFER_THRESHOLD", payload: v })}
+            resumeThresholdSecs={state.resumeThresholdSecs}
+            onResumeThresholdChange={(v) => dispatch({ type: "SET_RESUME_THRESHOLD", payload: v })}
               onGenerate={handleGenerate}
               onStop={stop}
               onPauseStream={pauseStream}

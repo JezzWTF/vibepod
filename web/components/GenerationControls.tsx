@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ServerStatus, DownloadProgress } from "@/app/page";
 
 const FALLBACK_VOICES = ["carter", "davis", "emma", "frank", "grace", "mike"];
@@ -12,6 +13,12 @@ interface GenerationControlsProps {
   onCfgScaleChange: (v: number) => void;
   inferenceSteps: number;
   onInferenceStepsChange: (v: number) => void;
+  prebufferSecs: number;
+  onPrebufferSecsChange: (v: number) => void;
+  rebufferThresholdSecs: number;
+  onRebufferThresholdChange: (v: number) => void;
+  resumeThresholdSecs: number;
+  onResumeThresholdChange: (v: number) => void;
   onGenerate: () => void;
   onStop: () => void;
   onPauseStream: () => void;
@@ -53,6 +60,12 @@ export default function GenerationControls({
   onCfgScaleChange,
   inferenceSteps,
   onInferenceStepsChange,
+  prebufferSecs,
+  onPrebufferSecsChange,
+  rebufferThresholdSecs,
+  onRebufferThresholdChange,
+  resumeThresholdSecs,
+  onResumeThresholdChange,
   onGenerate,
   onStop,
   onPauseStream,
@@ -65,6 +78,7 @@ export default function GenerationControls({
   serverStatus,
   downloadProgress,
 }: GenerationControlsProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const voices = availableVoices.length > 0 ? availableVoices : FALLBACK_VOICES;
   const serverReady = serverStatus === "online";
   const buttonDisabled = isGenerating || wordCount === 0 || !serverReady;
@@ -169,6 +183,108 @@ export default function GenerationControls({
         </div>
       </div>
 
+      {/* Advanced Buffering toggle */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          aria-expanded={showAdvanced}
+          aria-controls="advanced-buffering-panel"
+          className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors"
+          style={{ color: showAdvanced ? "var(--accent-teal)" : "var(--muted)" }}
+        >
+          <svg
+            className={`w-3 h-3 transition-transform ${showAdvanced ? "rotate-90" : ""}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          Advanced Buffering
+        </button>
+      </div>
+
+      {showAdvanced && (
+        <div id="advanced-buffering-panel" className="flex flex-col gap-4 pl-2 border-l" style={{ borderColor: "var(--border)" }}>
+          {/* Pre-buffer */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+                Initial Pre-buffer
+              </label>
+              <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
+                {prebufferSecs.toFixed(1)}s
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0.5}
+              max={10.0}
+              step={0.5}
+              value={prebufferSecs}
+              onChange={(e) => onPrebufferSecsChange(parseFloat(e.target.value))}
+              className="w-full h-1"
+            />
+          </div>
+
+          {/* Re-buffer threshold */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="rebuffer-threshold" className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+                Re-buffer Threshold
+              </label>
+              <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
+                {rebufferThresholdSecs.toFixed(1)}s
+              </span>
+            </div>
+            <input
+              id="rebuffer-threshold"
+              type="range"
+              min={0.1}
+              max={3.0}
+              step={0.1}
+              value={rebufferThresholdSecs}
+              onChange={(e) => {
+                const next = parseFloat(e.target.value);
+                onRebufferThresholdChange(next);
+                if (resumeThresholdSecs <= next) {
+                  onResumeThresholdChange(parseFloat((next + 0.5).toFixed(1)));
+                }
+              }}
+              className="w-full h-1"
+            />
+          </div>
+
+          {/* Resume threshold */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="resume-threshold" className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+                Resume Threshold
+              </label>
+              <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
+                {resumeThresholdSecs.toFixed(1)}s
+              </span>
+            </div>
+            <input
+              id="resume-threshold"
+              type="range"
+              min={0.5}
+              max={5.0}
+              step={0.1}
+              value={resumeThresholdSecs}
+              onChange={(e) => {
+                const next = parseFloat(e.target.value);
+                if (next <= rebufferThresholdSecs) return;
+                onResumeThresholdChange(next);
+              }}
+              className="w-full h-1"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Server status banner */}
       {!serverReady && (
         <div
@@ -177,7 +293,7 @@ export default function GenerationControls({
         >
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${serverStatus === "offline" || serverStatus === "error" ? "" : "animate-pulse"}`}
+              className={`w-2 h-2 rounded-full shrink-0 ${serverStatus === "offline" || serverStatus === "error" ? "" : "animate-pulse"}`}
               style={{ background: STATUS_CONFIG[serverStatus].color }}
             />
             <span style={{ color: STATUS_CONFIG[serverStatus].color }}>
