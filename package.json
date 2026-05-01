@@ -9,8 +9,10 @@
     "dev:server": "bash server/start.sh",
     "dev:server:cpu": "bash server/start.sh --cpu",
     "dev:web": "pnpm --filter vibepod-web dev",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "prettier --write . && cd server && uv run ruff format .",
+    "format:check": "prettier --check . && cd server && uv run ruff format --check .",
+    "lint:server": "cd server && uv run ruff check .",
+    "lint:server:fix": "cd server && uv run ruff check --fix ."
   },
   "devDependencies": {
     "prettier": "^3.5.3"
