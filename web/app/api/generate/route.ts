@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
   const pythonServerUrl = process.env.VIBEVOICE_SERVER_URL ?? "http://localhost:8000";
 
   try {
-    const body = await request.json() as {
+    const body = (await request.json()) as {
       text: string;
       speaker?: string;
       cfg_scale?: number;
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
         "X-Content-Type-Options": "nosniff",
         "X-Accel-Buffering": "no",
       },

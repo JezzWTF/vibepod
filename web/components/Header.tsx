@@ -6,8 +6,8 @@ type ServerStatus = "checking" | "downloading" | "loading" | "online" | "error" 
 type Device = "cpu" | "cuda" | null;
 
 // Polling intervals: poll quickly until the server is online, then slow down.
-const FAST_INTERVAL_MS = 3000;   // while checking / loading
-const SLOW_INTERVAL_MS = 30000;  // once online
+const FAST_INTERVAL_MS = 3000; // while checking / loading
+const SLOW_INTERVAL_MS = 30000; // once online
 
 export default function Header() {
   const [status, setStatus] = useState<ServerStatus>("checking");
@@ -31,7 +31,10 @@ export default function Header() {
           intervalRef.current = setInterval(checkHealth, SLOW_INTERVAL_MS);
         }
         // Switch to fast polling if we detect the server went offline/loading
-        if ((newStatus === "offline" || newStatus === "downloading" || newStatus === "loading") && intervalRef.current) {
+        if (
+          (newStatus === "offline" || newStatus === "downloading" || newStatus === "loading") &&
+          intervalRef.current
+        ) {
           clearInterval(intervalRef.current);
           intervalRef.current = setInterval(checkHealth, FAST_INTERVAL_MS);
         }
@@ -95,23 +98,20 @@ export default function Header() {
   const cfg = statusConfig[status];
 
   // Device badge — only shown once the server is online and device is known
-  const deviceBadge = status === "online" && device ? (
-    <span
-      className="px-2 py-0.5 rounded-full text-xs font-semibold tracking-wide uppercase"
-      style={{
-        background: device === "cuda"
-          ? "var(--accent-violet-dim)"
-          : "var(--accent-teal-dim)",
-        color: device === "cuda"
-          ? "var(--accent-violet)"
-          : "var(--accent-teal)",
-        border: `1px solid ${device === "cuda" ? "var(--accent-violet-dim)" : "var(--accent-teal-dim)"}`,
-      }}
-      title={device === "cuda" ? "Running on NVIDIA GPU" : "Running on CPU"}
-    >
-      {device.toUpperCase()}
-    </span>
-  ) : null;
+  const deviceBadge =
+    status === "online" && device ? (
+      <span
+        className="px-2 py-0.5 rounded-full text-xs font-semibold tracking-wide uppercase"
+        style={{
+          background: device === "cuda" ? "var(--accent-violet-dim)" : "var(--accent-teal-dim)",
+          color: device === "cuda" ? "var(--accent-violet)" : "var(--accent-teal)",
+          border: `1px solid ${device === "cuda" ? "var(--accent-violet-dim)" : "var(--accent-teal-dim)"}`,
+        }}
+        title={device === "cuda" ? "Running on NVIDIA GPU" : "Running on CPU"}
+      >
+        {device.toUpperCase()}
+      </span>
+    ) : null;
 
   return (
     <header
@@ -136,8 +136,7 @@ export default function Header() {
             <h1
               className="text-xl font-bold tracking-tight"
               style={{
-                background:
-                  "linear-gradient(135deg, var(--accent-teal), var(--accent-violet))",
+                background: "linear-gradient(135deg, var(--accent-teal), var(--accent-violet))",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
               }}
@@ -167,9 +166,7 @@ export default function Header() {
                 className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.color}`}
               />
             )}
-            <span
-              className={`relative inline-flex rounded-full h-2 w-2 ${cfg.color}`}
-            />
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${cfg.color}`} />
           </span>
           <span style={{ color: "var(--foreground)" }}>{cfg.label}</span>
         </div>

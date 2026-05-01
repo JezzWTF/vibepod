@@ -55,16 +55,12 @@ export function useAudioPlayer(audioUrl: string | null) {
       () => setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 })),
       { signal }
     );
-    audio.addEventListener(
-      "play",
-      () => setState((prev) => ({ ...prev, isPlaying: true })),
-      { signal }
-    );
-    audio.addEventListener(
-      "pause",
-      () => setState((prev) => ({ ...prev, isPlaying: false })),
-      { signal }
-    );
+    audio.addEventListener("play", () => setState((prev) => ({ ...prev, isPlaying: true })), {
+      signal,
+    });
+    audio.addEventListener("pause", () => setState((prev) => ({ ...prev, isPlaying: false })), {
+      signal,
+    });
 
     return () => {
       audio.pause();

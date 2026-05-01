@@ -15,10 +15,7 @@ interface TextInputPanelProps {
   onChange: (text: string) => void;
 }
 
-export default function TextInputPanel({
-  value,
-  onChange,
-}: TextInputPanelProps) {
+export default function TextInputPanel({ value, onChange }: TextInputPanelProps) {
   const charCount = value.length;
   const wordCount = value.trim() === "" ? 0 : value.trim().split(/\s+/).length;
 
@@ -43,15 +40,12 @@ export default function TextInputPanel({
               color: "var(--muted)",
             }}
             onMouseEnter={(e) => {
-              (e.target as HTMLButtonElement).style.color =
-                "var(--accent-violet)";
-              (e.target as HTMLButtonElement).style.borderColor =
-                "var(--accent-violet)";
+              (e.target as HTMLButtonElement).style.color = "var(--accent-violet)";
+              (e.target as HTMLButtonElement).style.borderColor = "var(--accent-violet)";
             }}
             onMouseLeave={(e) => {
               (e.target as HTMLButtonElement).style.color = "var(--muted)";
-              (e.target as HTMLButtonElement).style.borderColor =
-                "var(--border)";
+              (e.target as HTMLButtonElement).style.borderColor = "var(--border)";
             }}
           >
             Load sample script
@@ -69,8 +63,7 @@ export default function TextInputPanel({
             }}
             onMouseLeave={(e) => {
               (e.target as HTMLButtonElement).style.color = "var(--muted)";
-              (e.target as HTMLButtonElement).style.borderColor =
-                "var(--border)";
+              (e.target as HTMLButtonElement).style.borderColor = "var(--border)";
             }}
           >
             Clear
@@ -98,10 +91,7 @@ export default function TextInputPanel({
         }}
       />
 
-      <div
-        className="flex items-center justify-between text-xs"
-        style={{ color: "var(--muted)" }}
-      >
+      <div className="flex items-center justify-between text-xs" style={{ color: "var(--muted)" }}>
         <span>
           {wordCount} word{wordCount !== 1 ? "s" : ""}
         </span>

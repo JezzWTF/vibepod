@@ -36,18 +36,27 @@ const STATUS_CONFIG: Record<
   Exclude<ServerStatus, "online">,
   { color: string; label: (p: DownloadProgress | null) => string }
 > = {
-  offline:     { color: "var(--error)",   label: () => "Server offline — waiting for connection..." },
-  downloading: { color: "#60a5fa",        label: (p) => p && p.total > 0 ? `Downloading model... (${p.done} / ${p.total} files)` : "Downloading model (~1 GB)..." },
-  loading:     { color: "#fbbf24",        label: () => "Loading model into memory..." },
-  error:       { color: "var(--error)",   label: () => "Server error — check the terminal for details." },
+  offline: { color: "var(--error)", label: () => "Server offline — waiting for connection..." },
+  downloading: {
+    color: "#60a5fa",
+    label: (p) =>
+      p && p.total > 0
+        ? `Downloading model... (${p.done} / ${p.total} files)`
+        : "Downloading model (~1 GB)...",
+  },
+  loading: { color: "#fbbf24", label: () => "Loading model into memory..." },
+  error: { color: "var(--error)", label: () => "Server error — check the terminal for details." },
 };
-
 
 function SpinnerIcon() {
   return (
     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
     </svg>
   );
 }
@@ -146,7 +155,10 @@ export default function GenerationControls({
           onChange={(e) => onCfgScaleChange(parseFloat(e.target.value))}
           className="w-full"
         />
-        <div className="flex items-center justify-between text-xs" style={{ color: "var(--muted)" }}>
+        <div
+          className="flex items-center justify-between text-xs"
+          style={{ color: "var(--muted)" }}
+        >
           <span>Flat (0.5)</span>
           <span>CFG Scale</span>
           <span>Expressive (4.0)</span>
@@ -176,7 +188,10 @@ export default function GenerationControls({
           className="w-full"
           style={{ "--thumb-color": "var(--accent-violet)" } as React.CSSProperties}
         />
-        <div className="flex items-center justify-between text-xs" style={{ color: "var(--muted)" }}>
+        <div
+          className="flex items-center justify-between text-xs"
+          style={{ color: "var(--muted)" }}
+        >
           <span>Faster (5)</span>
           <span>Diffusion Steps</span>
           <span>Better (20)</span>
@@ -207,7 +222,11 @@ export default function GenerationControls({
       </div>
 
       {showAdvanced && (
-        <div id="advanced-buffering-panel" className="flex flex-col gap-4 pl-2 border-l" style={{ borderColor: "var(--border)" }}>
+        <div
+          id="advanced-buffering-panel"
+          className="flex flex-col gap-4 pl-2 border-l"
+          style={{ borderColor: "var(--border)" }}
+        >
           {/* Pre-buffer */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -232,7 +251,11 @@ export default function GenerationControls({
           {/* Re-buffer threshold */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <label htmlFor="rebuffer-threshold" className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+              <label
+                htmlFor="rebuffer-threshold"
+                className="text-xs font-medium"
+                style={{ color: "var(--foreground)" }}
+              >
                 Re-buffer Threshold
               </label>
               <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
@@ -260,7 +283,11 @@ export default function GenerationControls({
           {/* Resume threshold */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <label htmlFor="resume-threshold" className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+              <label
+                htmlFor="resume-threshold"
+                className="text-xs font-medium"
+                style={{ color: "var(--foreground)" }}
+              >
                 Resume Threshold
               </label>
               <span className="text-xs font-mono" style={{ color: "var(--accent-teal)" }}>
@@ -302,7 +329,10 @@ export default function GenerationControls({
           </div>
 
           {serverStatus === "downloading" && (
-            <div className="w-full rounded-full h-1.5 overflow-hidden" style={{ background: "var(--border)" }}>
+            <div
+              className="w-full rounded-full h-1.5 overflow-hidden"
+              style={{ background: "var(--border)" }}
+            >
               <div
                 className="h-1.5 rounded-full transition-all duration-500"
                 style={{
@@ -315,10 +345,16 @@ export default function GenerationControls({
           )}
 
           {serverStatus === "loading" && (
-            <div className="w-full rounded-full h-1.5 overflow-hidden" style={{ background: "var(--border)" }}>
+            <div
+              className="w-full rounded-full h-1.5 overflow-hidden"
+              style={{ background: "var(--border)" }}
+            >
               <div
                 className="h-1.5 rounded-full animate-pulse"
-                style={{ width: "60%", background: "linear-gradient(90deg, #fbbf24, var(--accent-teal))" }}
+                style={{
+                  width: "60%",
+                  background: "linear-gradient(90deg, #fbbf24, var(--accent-teal))",
+                }}
               />
             </div>
           )}
@@ -328,11 +364,17 @@ export default function GenerationControls({
       {/* Generation progress bar */}
       {isGenerating && (
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-xs" style={{ color: "var(--muted)" }}>
+          <div
+            className="flex items-center justify-between text-xs"
+            style={{ color: "var(--muted)" }}
+          >
             <span>{genElapsed}s elapsed</span>
             <span>{genPct !== null ? `${genPct}%` : "starting..."}</span>
           </div>
-          <div className="w-full rounded-full h-1.5 overflow-hidden" style={{ background: "var(--border)" }}>
+          <div
+            className="w-full rounded-full h-1.5 overflow-hidden"
+            style={{ background: "var(--border)" }}
+          >
             <div
               className="h-1.5 rounded-full transition-all duration-500"
               style={{
@@ -355,7 +397,8 @@ export default function GenerationControls({
             buttonDisabled
               ? { background: "var(--border)", color: "var(--muted)" }
               : {
-                  background: "linear-gradient(135deg, var(--accent-teal-dim), var(--accent-violet-dim))",
+                  background:
+                    "linear-gradient(135deg, var(--accent-teal-dim), var(--accent-violet-dim))",
                   color: "#fff",
                   boxShadow: "0 4px 15px rgba(45, 212, 191, 0.2)",
                 }
@@ -373,7 +416,13 @@ export default function GenerationControls({
             </>
           ) : (
             <>
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
               Generate Audio

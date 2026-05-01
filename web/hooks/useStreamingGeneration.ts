@@ -92,7 +92,7 @@ export function useStreamingGeneration({
   let resumeThresholdSecs = rawResumeThresholdSecs;
   if (resumeThresholdSecs <= rebufferThresholdSecs) {
     console.warn(
-      `[useStreamingGeneration] resumeThresholdSecs (${resumeThresholdSecs}) must be greater than rebufferThresholdSecs (${rebufferThresholdSecs}). Clamping resumeThresholdSecs to ${rebufferThresholdSecs + 0.5}.`,
+      `[useStreamingGeneration] resumeThresholdSecs (${resumeThresholdSecs}) must be greater than rebufferThresholdSecs (${rebufferThresholdSecs}). Clamping resumeThresholdSecs to ${rebufferThresholdSecs + 0.5}.`
     );
     resumeThresholdSecs = rebufferThresholdSecs + 0.5;
   }
@@ -162,177 +162,178 @@ export function useStreamingGeneration({
     hasStartedPlaybackRef.current = true;
   }, [enqueue]);
 
-  const handleAudioChunk = useCallback((chunk: Float32Array<ArrayBuffer>) => {
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
+  const handleAudioChunk = useCallback(
+    (chunk: Float32Array<ArrayBuffer>) => {
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
 
-    chunksRef.current.push(chunk);
-    totalAudioSamplesRef.current += chunk.length;
+      chunksRef.current.push(chunk);
+      totalAudioSamplesRef.current += chunk.length;
 
-    if (!firstChunkSeenRef.current) {
-      firstChunkSeenRef.current = true;
-      onLog("First audio chunk received");
-    }
-
-    if (!hasStartedPlaybackRef.current) {
-      const bufferedSecs = chunksRef.current.reduce((sum, c) => sum + c.length, 0) / SAMPLE_RATE;
-      if (bufferedSecs >= prebufferSecs) {
-        onLog(`Playback started after ${bufferedSecs.toFixed(1)}s buffered`);
-        flushBufferedAudio();
-      }
-      return;
-    }
-
-    enqueue(ctx, chunk);
-    if (isUserPausedRef.current) return;
-
-    const ahead = nextStartTimeRef.current - ctx.currentTime;
-    if (
-      ctx.state === "running" &&
-      !isAutoBufferingRef.current &&
-      ahead < rebufferThresholdSecs
-    ) {
-      isAutoBufferingRef.current = true;
-      underrunCountRef.current += 1;
-      adaptiveResumeSecsRef.current = Math.min(
-        MAX_ADAPTIVE_RESUME_SECS,
-        Math.max(resumeThresholdSecs, prebufferSecs + underrunCountRef.current * 2),
-      );
-      ctx.suspend().catch(() => {});
-      onLog(
-        `Buffer underrun ${underrunCountRef.current}; refilling to ${adaptiveResumeSecsRef.current.toFixed(1)}s`,
-      );
-    } else if (
-      isAutoBufferingRef.current &&
-      ahead >= adaptiveResumeSecsRef.current
-    ) {
-      isAutoBufferingRef.current = false;
-      ctx.resume().catch(() => {});
-      onLog(`Buffer recovered with ${ahead.toFixed(1)}s queued`);
-    }
-  }, [enqueue, flushBufferedAudio, onLog, prebufferSecs, rebufferThresholdSecs, resumeThresholdSecs]);
-
-  const generate = useCallback(async (options: GenerateOptions) => {
-    if (!options.text.trim()) return;
-
-    resetPlayback();
-    revokeCurrentUrl();
-    audioCtxRef.current = new AudioContext({ sampleRate: SAMPLE_RATE });
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    onStart();
-    onLog(`Voice: ${options.speaker}`);
-    onLog(`CFG ${options.cfgScale.toFixed(1)}, steps ${options.inferenceSteps}`);
-
-    const startedAt = Date.now();
-    const timerId = window.setInterval(() => {
-      onProgress((Date.now() - startedAt) / 1000, null);
-    }, 500);
-
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: options.text,
-          speaker: options.speaker,
-          cfg_scale: options.cfgScale,
-          inference_steps: options.inferenceSteps,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? `HTTP ${res.status}`);
+      if (!firstChunkSeenRef.current) {
+        firstChunkSeenRef.current = true;
+        onLog("First audio chunk received");
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      if (!hasStartedPlaybackRef.current) {
+        const bufferedSecs = chunksRef.current.reduce((sum, c) => sum + c.length, 0) / SAMPLE_RATE;
+        if (bufferedSecs >= prebufferSecs) {
+          onLog(`Playback started after ${bufferedSecs.toFixed(1)}s buffered`);
+          flushBufferedAudio();
+        }
+        return;
+      }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      enqueue(ctx, chunk);
+      if (isUserPausedRef.current) return;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+      const ahead = nextStartTimeRef.current - ctx.currentTime;
+      if (ctx.state === "running" && !isAutoBufferingRef.current && ahead < rebufferThresholdSecs) {
+        isAutoBufferingRef.current = true;
+        underrunCountRef.current += 1;
+        adaptiveResumeSecsRef.current = Math.min(
+          MAX_ADAPTIVE_RESUME_SECS,
+          Math.max(resumeThresholdSecs, prebufferSecs + underrunCountRef.current * 2)
+        );
+        ctx.suspend().catch(() => {});
+        onLog(
+          `Buffer underrun ${underrunCountRef.current}; refilling to ${adaptiveResumeSecsRef.current.toFixed(1)}s`
+        );
+      } else if (isAutoBufferingRef.current && ahead >= adaptiveResumeSecsRef.current) {
+        isAutoBufferingRef.current = false;
+        ctx.resume().catch(() => {});
+        onLog(`Buffer recovered with ${ahead.toFixed(1)}s queued`);
+      }
+    },
+    [enqueue, flushBufferedAudio, onLog, prebufferSecs, rebufferThresholdSecs, resumeThresholdSecs]
+  );
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6)) as {
-            type: "audio_chunk" | "complete" | "error" | "cancelled";
-            data?: string;
-            elapsed?: number;
-            audio_secs?: number;
-            realtime_factor?: number | null;
-            chunks?: number;
-            first_chunk_secs?: number | null;
-            max_chunk_gap_secs?: number;
-            message?: string;
-          };
+  const generate = useCallback(
+    async (options: GenerateOptions) => {
+      if (!options.text.trim()) return;
 
-          if (event.type === "audio_chunk" && event.data) {
-            handleAudioChunk(decodeFloat32Chunk(event.data));
-          } else if (event.type === "complete") {
-            if (!hasStartedPlaybackRef.current) {
-              flushBufferedAudio();
-            } else if (isAutoBufferingRef.current) {
-              isAutoBufferingRef.current = false;
-              audioCtxRef.current?.resume().catch(() => {});
-            }
-            const wavBlob = buildWav(mergeFloat32Arrays(chunksRef.current), SAMPLE_RATE);
-            const audioUrl = URL.createObjectURL(wavBlob);
-            audioUrlRef.current = audioUrl;
-            const kb = (wavBlob.size / 1024).toFixed(0);
-            const audioSecs = event.audio_secs ?? totalAudioSamplesRef.current / SAMPLE_RATE;
-            const realtimeFactor =
-              event.realtime_factor ??
-              (event.elapsed && event.elapsed > 0 ? audioSecs / event.elapsed : null);
-            const speedText =
-              realtimeFactor === null ? "" : ` - ${realtimeFactor.toFixed(2)}x realtime`;
-            onLog(`Done in ${event.elapsed}s - ${audioSecs.toFixed(1)}s audio${speedText} - ${kb} KB`);
-            if (event.chunks && event.first_chunk_secs !== undefined) {
+      resetPlayback();
+      revokeCurrentUrl();
+      audioCtxRef.current = new AudioContext({ sampleRate: SAMPLE_RATE });
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      onStart();
+      onLog(`Voice: ${options.speaker}`);
+      onLog(`CFG ${options.cfgScale.toFixed(1)}, steps ${options.inferenceSteps}`);
+
+      const startedAt = Date.now();
+      const timerId = window.setInterval(() => {
+        onProgress((Date.now() - startedAt) / 1000, null);
+      }, 500);
+
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: options.text,
+            speaker: options.speaker,
+            cfg_scale: options.cfgScale,
+            inference_steps: options.inferenceSteps,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok || !res.body) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(err.error ?? `HTTP ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const event = JSON.parse(line.slice(6)) as {
+              type: "audio_chunk" | "complete" | "error" | "cancelled";
+              data?: string;
+              elapsed?: number;
+              audio_secs?: number;
+              realtime_factor?: number | null;
+              chunks?: number;
+              first_chunk_secs?: number | null;
+              max_chunk_gap_secs?: number;
+              message?: string;
+            };
+
+            if (event.type === "audio_chunk" && event.data) {
+              handleAudioChunk(decodeFloat32Chunk(event.data));
+            } else if (event.type === "complete") {
+              if (!hasStartedPlaybackRef.current) {
+                flushBufferedAudio();
+              } else if (isAutoBufferingRef.current) {
+                isAutoBufferingRef.current = false;
+                audioCtxRef.current?.resume().catch(() => {});
+              }
+              const wavBlob = buildWav(mergeFloat32Arrays(chunksRef.current), SAMPLE_RATE);
+              const audioUrl = URL.createObjectURL(wavBlob);
+              audioUrlRef.current = audioUrl;
+              const kb = (wavBlob.size / 1024).toFixed(0);
+              const audioSecs = event.audio_secs ?? totalAudioSamplesRef.current / SAMPLE_RATE;
+              const realtimeFactor =
+                event.realtime_factor ??
+                (event.elapsed && event.elapsed > 0 ? audioSecs / event.elapsed : null);
+              const speedText =
+                realtimeFactor === null ? "" : ` - ${realtimeFactor.toFixed(2)}x realtime`;
               onLog(
-                `Stream: first chunk ${event.first_chunk_secs}s, ${event.chunks} chunks, max gap ${event.max_chunk_gap_secs}s`,
+                `Done in ${event.elapsed}s - ${audioSecs.toFixed(1)}s audio${speedText} - ${kb} KB`
               );
+              if (event.chunks && event.first_chunk_secs !== undefined) {
+                onLog(
+                  `Stream: first chunk ${event.first_chunk_secs}s, ${event.chunks} chunks, max gap ${event.max_chunk_gap_secs}s`
+                );
+              }
+              onSuccess(audioUrl);
+            } else if (event.type === "cancelled") {
+              throw new DOMException("Generation cancelled", "AbortError");
+            } else if (event.type === "error") {
+              throw new Error(event.message ?? "Generation failed");
             }
-            onSuccess(audioUrl);
-          } else if (event.type === "cancelled") {
-            throw new DOMException("Generation cancelled", "AbortError");
-          } else if (event.type === "error") {
-            throw new Error(event.message ?? "Generation failed");
           }
         }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          onLog("Cancelled.");
+          onCancel();
+        } else {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          onLog(`Error: ${message}`);
+          onError();
+        }
+      } finally {
+        window.clearInterval(timerId);
+        abortRef.current = null;
       }
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        onLog("Cancelled.");
-        onCancel();
-      } else {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        onLog(`Error: ${message}`);
-        onError();
-      }
-    } finally {
-      window.clearInterval(timerId);
-      abortRef.current = null;
-    }
-  }, [
-    flushBufferedAudio,
-    handleAudioChunk,
-    onCancel,
-    onError,
-    onLog,
-    onProgress,
-    onStart,
-    onSuccess,
-    resetPlayback,
-    revokeCurrentUrl,
-  ]);
+    },
+    [
+      flushBufferedAudio,
+      handleAudioChunk,
+      onCancel,
+      onError,
+      onLog,
+      onProgress,
+      onStart,
+      onSuccess,
+      resetPlayback,
+      revokeCurrentUrl,
+    ]
+  );
 
   const pauseStream = useCallback(() => {
     isUserPausedRef.current = true;

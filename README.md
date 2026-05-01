@@ -14,12 +14,12 @@ The Next.js app proxies audio generation requests to the FastAPI server, keeping
 
 ## Prerequisites
 
-| Tool | Install |
-|------|---------|
-| [Node.js 20+](https://nodejs.org) | `winget install OpenJS.NodeJS.LTS` |
-| [pnpm](https://pnpm.io) | `npm i -g pnpm` |
+| Tool                               | Install                             |
+| ---------------------------------- | ----------------------------------- |
+| [Node.js 20+](https://nodejs.org)  | `winget install OpenJS.NodeJS.LTS`  |
+| [pnpm](https://pnpm.io)            | `npm i -g pnpm`                     |
 | [Python 3.10+](https://python.org) | `winget install Python.Python.3.13` |
-| [uv](https://docs.astral.sh/uv/) | `winget install astral-sh.uv` |
+| [uv](https://docs.astral.sh/uv/)   | `winget install astral-sh.uv`       |
 
 ## Getting started
 
@@ -50,10 +50,10 @@ The frontend shows a loading indicator while the model downloads. Once the serve
 
 VibePod maintains two completely separate Python virtual environments so CUDA and CPU torch installs never conflict:
 
-| Mode | Command | venv | torch source |
-|------|---------|------|--------------|
-| CUDA (default) | `pnpm dev` | `server/.venv` | PyTorch CUDA 12.4 index |
-| CPU-only | `pnpm dev:cpu` | `server/.venv-cpu` | PyPI (CPU wheel) |
+| Mode           | Command        | venv               | torch source            |
+| -------------- | -------------- | ------------------ | ----------------------- |
+| CUDA (default) | `pnpm dev`     | `server/.venv`     | PyTorch CUDA 12.4 index |
+| CPU-only       | `pnpm dev:cpu` | `server/.venv-cpu` | PyPI (CPU wheel)        |
 
 On first run, each mode creates its own venv automatically. You can switch between them freely — they are fully independent. The active device is reported by the `/health` endpoint as `"device": "cpu"` or `"device": "cuda"`.
 
@@ -74,11 +74,11 @@ pnpm build            # Production build of the frontend
 
 Copy `.env.example` to `.env.local` and set:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable               | Default                 | Description                                               |
+| ---------------------- | ----------------------- | --------------------------------------------------------- |
 | `VIBEVOICE_SERVER_URL` | `http://localhost:8000` | URL the Next.js API routes use to reach the Python server |
-| `HF_TOKEN` | — | HuggingFace token (required if the model repo is gated) |
-| `HF_HOME` | — | Override the HuggingFace model cache directory |
+| `HF_TOKEN`             | —                       | HuggingFace token (required if the model repo is gated)   |
+| `HF_HOME`              | —                       | Override the HuggingFace model cache directory            |
 
 ## Project structure
 
@@ -107,11 +107,11 @@ server/
 
 ## Generation parameters
 
-| Parameter | Range | Default | Effect |
-|-----------|-------|---------|--------|
-| `speaker` | `carter`, `davis`, `emma`, `frank`, `grace`, `mike` | `carter` | Voice preset used for the generated audio |
-| `cfg_scale` | 0.5 – 4.0 | 1.5 | Higher = more expressive guidance |
-| `inference_steps` | 5 – 20 | 10 | More steps = higher quality, slower generation |
+| Parameter         | Range                                               | Default  | Effect                                         |
+| ----------------- | --------------------------------------------------- | -------- | ---------------------------------------------- |
+| `speaker`         | `carter`, `davis`, `emma`, `frank`, `grace`, `mike` | `carter` | Voice preset used for the generated audio      |
+| `cfg_scale`       | 0.5 – 4.0                                           | 1.5      | Higher = more expressive guidance              |
+| `inference_steps` | 5 – 20                                              | 10       | More steps = higher quality, slower generation |
 
 ## How it works
 

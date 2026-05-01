@@ -14,15 +14,8 @@ function formatTime(seconds: number): string {
 }
 
 export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
-  const {
-    isPlaying,
-    currentTime,
-    duration,
-    volume,
-    toggle,
-    seek,
-    setVolume,
-  } = useAudioPlayer(audioUrl);
+  const { isPlaying, currentTime, duration, volume, toggle, seek, setVolume } =
+    useAudioPlayer(audioUrl);
 
   if (!audioUrl) return null;
 
@@ -56,12 +49,10 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
             background: "rgba(45, 212, 191, 0.05)",
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background =
-              "rgba(45, 212, 191, 0.15)";
+            (e.currentTarget as HTMLButtonElement).style.background = "rgba(45, 212, 191, 0.15)";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background =
-              "rgba(45, 212, 191, 0.05)";
+            (e.currentTarget as HTMLButtonElement).style.background = "rgba(45, 212, 191, 0.05)";
           }}
         >
           <svg
@@ -115,27 +106,18 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
           onClick={toggle}
           className="w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 cursor-pointer"
           style={{
-            background:
-              "linear-gradient(135deg, var(--accent-teal-dim), var(--accent-violet-dim))",
+            background: "linear-gradient(135deg, var(--accent-teal-dim), var(--accent-violet-dim))",
             boxShadow: "0 4px 12px rgba(45, 212, 191, 0.3)",
           }}
           aria-label={isPlaying ? "Pause" : "Play"}
         >
           {isPlaying ? (
-            <svg
-              className="w-4 h-4 text-white"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="4" width="4" height="16" />
               <rect x="14" y="4" width="4" height="16" />
             </svg>
           ) : (
-            <svg
-              className="w-4 h-4 text-white"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
           )}
@@ -143,9 +125,7 @@ export default function AudioPlayer({ audioUrl }: AudioPlayerProps) {
 
         {/* Duration info */}
         <div className="flex-1 flex items-center gap-1 text-sm">
-          <span style={{ color: "var(--foreground)" }}>
-            {formatTime(currentTime)}
-          </span>
+          <span style={{ color: "var(--foreground)" }}>{formatTime(currentTime)}</span>
           <span style={{ color: "var(--muted)" }}>/</span>
           <span style={{ color: "var(--muted)" }}>{formatTime(duration)}</span>
         </div>
