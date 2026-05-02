@@ -24,6 +24,8 @@ export interface ServerConfig {
   default_inference_steps: number;
 }
 
+// --- State Management ---
+
 interface AppState {
   script: string;
   speaker: string;
@@ -199,6 +201,8 @@ export default function HomePage() {
     resumeThresholdSecs: state.resumeThresholdSecs,
   });
 
+  // --- Server Health & Status Polling ---
+
   // Server health polling — fast while not ready, slow when online
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -245,6 +249,8 @@ export default function HomePage() {
       clearTimeout(timeoutId);
     };
   }, []);
+
+  // --- Generation Handling ---
 
   const handleGenerate = useCallback(async () => {
     if (!state.script.trim() || state.isGenerating) return;

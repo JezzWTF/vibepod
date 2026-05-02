@@ -1,3 +1,14 @@
+/**
+ * API Proxy Route: POST /api/generate
+ *
+ * This route proxies requests from the frontend to the FastAPI backend's /generate endpoint.
+ *
+ * Security Architecture:
+ * The FastAPI backend is configured to bind only to localhost (127.0.0.1). This prevents
+ * unauthenticated public access to the model inference engine. Next.js acts as a secure
+ * proxy, allowing the frontend to interact with the backend while maintaining a
+ * single public-facing origin.
+ */
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";

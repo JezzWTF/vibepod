@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * Hook for managing real-time streaming audio generation from the VibeVoice server.
+ *
+ * Streaming Lifecycle:
+ * 1. fetch /api/generate: Initiates a POST request to the generation endpoint.
+ * 2. parse SSE chunks: Listens for Server-Sent Events (SSE) containing audio data or status updates.
+ * 3. decode base64 float32 PCM: Converts incoming base64-encoded strings into raw Float32 audio samples.
+ * 4. schedule Web Audio playback: Enqueues audio chunks into an AudioContext for low-latency playback.
+ * 5. handle adaptive buffering: Monitors playback progress and pauses to refill the buffer if an underrun is detected.
+ * 6. assemble final WAV Blob: Combines all received chunks into a single WAV file once generation is complete.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const SAMPLE_RATE = 24_000;
@@ -30,6 +41,9 @@ interface UseStreamingGenerationOptions {
   resumeThresholdSecs?: number;
 }
 
+/**
+ * Concatenates multiple Float32Array chunks into a single Float32Array.
+ */
 function mergeFloat32Arrays(chunks: Float32Array<ArrayBuffer>[]): Float32Array<ArrayBuffer> {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const out = new Float32Array(total);
@@ -41,6 +55,9 @@ function mergeFloat32Arrays(chunks: Float32Array<ArrayBuffer>[]): Float32Array<A
   return out;
 }
 
+/**
+ * Wraps Float32 PCM samples into a WAV file Blob with a standard header.
+ */
 function buildWav(samples: Float32Array<ArrayBuffer>, sampleRate: number): Blob {
   const dataSize = samples.length * 4;
   const buffer = new ArrayBuffer(44 + dataSize);
@@ -68,6 +85,9 @@ function buildWav(samples: Float32Array<ArrayBuffer>, sampleRate: number): Blob 
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+/**
+ * Decodes a base64-encoded string into a Float32Array of PCM samples.
+ */
 function decodeFloat32Chunk(data: string): Float32Array<ArrayBuffer> {
   const raw = atob(data);
   const bytes = new Uint8Array(raw.length);
@@ -141,6 +161,9 @@ export function useStreamingGeneration({
     };
   }, [resetPlayback, revokeCurrentUrl]);
 
+  /**
+   * Creates an AudioBuffer from a chunk and schedules it for playback in the AudioContext.
+   */
   const enqueue = useCallback((ctx: AudioContext, chunk: Float32Array<ArrayBuffer>) => {
     const audioBuffer = ctx.createBuffer(1, chunk.length, SAMPLE_RATE);
     audioBuffer.copyToChannel(chunk, 0);
@@ -152,6 +175,9 @@ export function useStreamingGeneration({
     nextStartTimeRef.current = startAt + audioBuffer.duration;
   }, []);
 
+  /**
+   * Resets the playback timing and enqueues all currently buffered chunks for immediate playback.
+   */
   const flushBufferedAudio = useCallback(() => {
     const ctx = audioCtxRef.current;
     if (!ctx || chunksRef.current.length === 0) return;
@@ -162,6 +188,10 @@ export function useStreamingGeneration({
     hasStartedPlaybackRef.current = true;
   }, [enqueue]);
 
+  /**
+   * Processes a new audio chunk, either buffering it for initial playback or enqueuing it for
+   * immediate playback with adaptive buffering logic.
+   */
   const handleAudioChunk = useCallback(
     (chunk: Float32Array<ArrayBuffer>) => {
       const ctx = audioCtxRef.current;

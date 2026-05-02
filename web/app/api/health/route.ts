@@ -1,3 +1,14 @@
+/**
+ * API Proxy Route: GET /api/health
+ *
+ * This route proxies health check requests from the frontend to the FastAPI backend's /health endpoint.
+ *
+ * Security Architecture:
+ * The FastAPI backend is configured to bind only to localhost (127.0.0.1). This prevents
+ * unauthenticated public access to the server status and configuration. Next.js acts as a secure
+ * proxy, allowing the frontend to poll for server readiness and adaptive configuration
+ * while maintaining a single public-facing origin.
+ */
 import { NextResponse } from "next/server";
 
 const OFFLINE_RESPONSE = { status: "offline" };
