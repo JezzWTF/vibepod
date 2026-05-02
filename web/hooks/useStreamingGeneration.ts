@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { buildWav, decodeFloat32Chunk, mergeFloat32Arrays, SAMPLE_RATE } from "@/lib/audio/wav";
 
-const SAMPLE_RATE = 24_000;
 const DEFAULT_PREBUFFER_SECS = 5.0;
 const DEFAULT_REBUFFER_THRESHOLD_SECS = 1.0;
 const DEFAULT_RESUME_THRESHOLD_SECS = 3.0;
@@ -28,53 +28,6 @@ interface UseStreamingGenerationOptions {
   rebufferThresholdSecs?: number;
   /** Buffer lookahead (seconds) at or above which suspended playback resumes. Must be > rebufferThresholdSecs. */
   resumeThresholdSecs?: number;
-}
-
-function mergeFloat32Arrays(chunks: Float32Array<ArrayBuffer>[]): Float32Array<ArrayBuffer> {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const out = new Float32Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return out;
-}
-
-function buildWav(samples: Float32Array<ArrayBuffer>, sampleRate: number): Blob {
-  const dataSize = samples.length * 4;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-  const writeString = (offset: number, value: string) => {
-    for (let i = 0; i < value.length; i += 1) {
-      view.setUint8(offset + i, value.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 3, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 4, true);
-  view.setUint16(32, 4, true);
-  view.setUint16(34, 32, true);
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-  new Float32Array(buffer, 44).set(samples);
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-function decodeFloat32Chunk(data: string): Float32Array<ArrayBuffer> {
-  const raw = atob(data);
-  const bytes = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i += 1) {
-    bytes[i] = raw.charCodeAt(i);
-  }
-  return new Float32Array(bytes.buffer as ArrayBuffer);
 }
 
 export function useStreamingGeneration({
