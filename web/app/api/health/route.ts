@@ -4,8 +4,7 @@ const OFFLINE_RESPONSE = { status: "offline" };
 const COMMON_OPTIONS = { headers: { "Cache-Control": "no-store" } };
 
 export async function GET() {
-  const pythonServerUrl =
-    process.env.VIBEVOICE_SERVER_URL ?? "http://localhost:8000";
+  const pythonServerUrl = process.env.VIBEVOICE_SERVER_URL ?? "http://localhost:8000";
 
   try {
     const res = await fetch(`${pythonServerUrl}/health`, {
@@ -27,6 +26,7 @@ export async function GET() {
           message: data.message,
           progress: data.progress ?? null,
           voices: data.voices ?? [],
+          config: data.config ?? null,
         },
         COMMON_OPTIONS
       );

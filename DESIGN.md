@@ -173,16 +173,21 @@ The shape language is a hybrid of structural precision and tactile softness.
 ## Components
 
 ### Card Containers
+
 The fundamental building block of the UI. Every distinct section (Script, Player, Controls, Logs) is housed in a card featuring the `card-bg`, a 1px `border`, and `rounded-xl` corners. The internal layout always features an uppercase teal header for immediate section identification.
 
 ### Primary Action Buttons
+
 Used for high-leverage actions like "Generate Audio" and "Play/Pause." These buttons utilize the `gradient-primary-dim` background, bold white text, and emit a soft teal glow to draw the eye and signify their importance.
 
 ### Range Sliders
+
 Custom-styled input ranges replace default browser styles. The tracks are muted and slim, while the thumbs are bright teal, fully rounded, and emit a glow that intensifies on hover, providing a premium, tactile scrubbing experience.
 
 ### Status Indicators & Logs
+
 A critical component of the application. Status badges utilize a minimalist pill shape with a pulsing ring animation to indicate active server processing. The log panel explicitly uses monospace typography and color-codes messages (green for success, red for error, white for neutral) to provide a terminal-like readout of the backend systems.
 
 ### Gradients
+
 Gradients are used purposefully to indicate progress, activity, or brand presence. The primary gradient (`135deg` from teal to violet) is used for branding (the logo icon and text) and primary buttons. Horizontal gradients (`90deg`) are used dynamically in progress bars to represent the flow of data over time (e.g., loading, downloading, and audio generation).

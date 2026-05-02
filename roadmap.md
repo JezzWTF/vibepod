@@ -39,6 +39,13 @@ VibePod Studio will turn generated audio from a one-shot download into a reusabl
 - Add project save/load, autosave, and recoverable render jobs.
 - Prepare the audio pipeline for queueing longer renders outside the request lifecycle.
 
+## Later: VibeVoice Performance Research
+
+- Move the current VibePod hot-path monkey patches into the `JezzWTF/VibeVoice` fork once the feature direction has settled.
+- Add clearer generation profiling for overlapped CPU work, especially decode wait time versus total acoustic decode time.
+- Prototype batched positive/negative CFG TTS LM inference behind an opt-in flag and benchmark it against the current sequential path on CPU and CUDA.
+- Keep experimental performance work isolated from user-facing feature work unless it shows a clear speedup without audio quality regressions.
+
 ## Foundation Work Needed First
 
 - Persist generated outputs with stable IDs.

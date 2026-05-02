@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build outputs
+web/.next/
+web/tsconfig.tsbuildinfo
+web/next-env.d.ts
+
+# Python / server
+server/
+
+# Lock files
+pnpm-lock.yaml
+web/pnpm-lock.yaml
+
+# Generated
+web/public/

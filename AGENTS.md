@@ -8,10 +8,10 @@ This file gives AI coding agents (Jules, Copilot, Claude Code, etc.) the context
 
 VibePod is a text-to-speech web app. It has two services that must both run for the app to work:
 
-| Service | Language | Entry point | Port |
-|---------|----------|-------------|------|
-| **server** | Python 3.10+ (FastAPI + VibeVoice) | `server/start.sh` | 8000 |
-| **web** | TypeScript (Next.js 15, React 19) | `pnpm --filter vibepod-web dev` | 3000 |
+| Service    | Language                           | Entry point                     | Port |
+| ---------- | ---------------------------------- | ------------------------------- | ---- |
+| **server** | Python 3.10+ (FastAPI + VibeVoice) | `server/start.sh`               | 8000 |
+| **web**    | TypeScript (Next.js 15, React 19)  | `pnpm --filter vibepod-web dev` | 3000 |
 
 The Next.js frontend proxies all model requests through its own API routes to the FastAPI server — it never calls the Python server directly from the browser.
 
@@ -51,12 +51,12 @@ pnpm build
 
 The `--cpu` flag in `start.sh` sets `VIBEPOD_DEVICE=cpu` and uses a separate venv (`server/.venv-cpu`) so CUDA and CPU installs never conflict. `vibevoice_server.py` reads `VIBEPOD_DEVICE` at startup via `_resolve_device()` — do not remove or rename that function.
 
-| Env var | Values | Set by |
-|---------|--------|--------|
-| `VIBEPOD_DEVICE` | `cpu` \| `cuda` | `server/start.sh` |
-| `UV_PROJECT_ENVIRONMENT` | `.venv-cpu` \| `.venv` | `server/start.sh` |
-| `HF_TOKEN` | HuggingFace token | Jules secret / `.env.local` |
-| `VIBEVOICE_SERVER_URL` | `http://localhost:8000` | `.env.local` |
+| Env var                  | Values                  | Set by                      |
+| ------------------------ | ----------------------- | --------------------------- |
+| `VIBEPOD_DEVICE`         | `cpu` \| `cuda`         | `server/start.sh`           |
+| `UV_PROJECT_ENVIRONMENT` | `.venv-cpu` \| `.venv`  | `server/start.sh`           |
+| `HF_TOKEN`               | HuggingFace token       | Jules secret / `.env.local` |
+| `VIBEVOICE_SERVER_URL`   | `http://localhost:8000` | `.env.local`                |
 
 ---
 
@@ -94,7 +94,9 @@ dev.sh                   Concurrent launcher (forwards flags to start.sh)
 ## API reference
 
 ### `GET /health`
+
 Returns server status. Safe to poll.
+
 ```json
 {
   "status": "online",
@@ -103,13 +105,17 @@ Returns server status. Safe to poll.
   "voices": ["carter", "davis", "emma", "frank", "grace", "mike"]
 }
 ```
+
 `status` values: `downloading` | `loading` | `online` | `error`
 
 ### `POST /generate`
+
 Streams audio as SSE events.
+
 ```json
 { "text": "Hello world", "speaker": "carter", "cfg_scale": 1.5, "inference_steps": 10 }
 ```
+
 Event types: `audio_chunk` (base64 float32 PCM) | `complete` | `error` | `cancelled`
 
 ---
@@ -117,12 +123,14 @@ Event types: `audio_chunk` (base64 float32 PCM) | `complete` | `error` | `cancel
 ## Do / Don't
 
 **Do:**
+
 - Use `pnpm dev:cpu` in Jules — never plain `pnpm dev`
 - Run `git checkout server/uv.lock` if uv rewrites it during setup
 - Keep `_resolve_device()` in `vibevoice_server.py` — it's the CPU/CUDA switching logic
 - Test server changes against `GET /health` and `POST /generate`
 
 **Don't:**
+
 - Run `uv sync` without `UV_PROJECT_ENVIRONMENT=.venv-cpu` in the Jules sandbox
 - Install Python packages with pip
 - Modify `server/uv.lock` manually

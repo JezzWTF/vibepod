@@ -69,19 +69,39 @@ type AppAction =
 
 function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
-    case "SET_SCRIPT":         return { ...state, script: action.payload };
-    case "SET_SPEAKER":        return { ...state, speaker: action.payload };
-    case "SET_CFG_SCALE":      return { ...state, cfgScale: action.payload };
-    case "SET_INFERENCE_STEPS": return { ...state, inferenceSteps: action.payload };
-    case "SET_PREBUFFER_SECS": return { ...state, prebufferSecs: action.payload };
-    case "SET_REBUFFER_THRESHOLD": return { ...state, rebufferThresholdSecs: action.payload };
-    case "SET_RESUME_THRESHOLD": return { ...state, resumeThresholdSecs: action.payload };
+    case "SET_SCRIPT":
+      return { ...state, script: action.payload };
+    case "SET_SPEAKER":
+      return { ...state, speaker: action.payload };
+    case "SET_CFG_SCALE":
+      return { ...state, cfgScale: action.payload };
+    case "SET_INFERENCE_STEPS":
+      return { ...state, inferenceSteps: action.payload };
+    case "SET_PREBUFFER_SECS":
+      return { ...state, prebufferSecs: action.payload };
+    case "SET_REBUFFER_THRESHOLD":
+      return { ...state, rebufferThresholdSecs: action.payload };
+    case "SET_RESUME_THRESHOLD":
+      return { ...state, resumeThresholdSecs: action.payload };
     case "START_GENERATION":
-      return { ...state, isGenerating: true, audioUrl: null, logs: [], genElapsed: 0, genPct: null };
+      return {
+        ...state,
+        isGenerating: true,
+        audioUrl: null,
+        logs: [],
+        genElapsed: 0,
+        genPct: null,
+      };
     case "GEN_PROGRESS":
       return { ...state, genElapsed: action.elapsed, genPct: action.pct };
     case "GENERATION_SUCCESS":
-      return { ...state, isGenerating: false, genElapsed: 0, genPct: null, audioUrl: action.payload };
+      return {
+        ...state,
+        isGenerating: false,
+        genElapsed: 0,
+        genPct: null,
+        audioUrl: action.payload,
+      };
     case "GENERATION_CANCELLED":
     case "GENERATION_ERROR":
       return { ...state, isGenerating: false, genElapsed: 0, genPct: null };
@@ -89,21 +109,27 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, logs: [...state.logs, action.payload] };
     case "SET_SERVER_STATUS": {
       const isNewConfig = !state.serverConfig && action.payload.config;
-      const deviceChanged = !!(state.serverConfig && action.payload.config && state.serverConfig.device !== action.payload.config.device);
+      const deviceChanged = !!(
+        state.serverConfig &&
+        action.payload.config &&
+        state.serverConfig.device !== action.payload.config.device
+      );
 
-      const nextSteps = (isNewConfig || deviceChanged)
+      const nextSteps =
+        isNewConfig || deviceChanged
           ? action.payload.config!.default_inference_steps
           : state.inferenceSteps;
 
-      const nextPrebuffer = (isNewConfig || deviceChanged)
-          ? action.payload.config!.prebuffer_secs
-          : state.prebufferSecs;
+      const nextPrebuffer =
+        isNewConfig || deviceChanged ? action.payload.config!.prebuffer_secs : state.prebufferSecs;
 
-      const nextRebuffer = (isNewConfig || deviceChanged)
+      const nextRebuffer =
+        isNewConfig || deviceChanged
           ? action.payload.config!.rebuffer_threshold_secs
           : state.rebufferThresholdSecs;
 
-      const nextResume = (isNewConfig || deviceChanged)
+      const nextResume =
+        isNewConfig || deviceChanged
           ? action.payload.config!.resume_threshold_secs
           : state.resumeThresholdSecs;
 
@@ -121,7 +147,8 @@ function reducer(state: AppState, action: AppAction): AppState {
         resumeThresholdSecs: nextResume,
       };
     }
-    default: return state;
+    default:
+      return state;
   }
 }
 
@@ -130,9 +157,9 @@ const initialState: AppState = {
   speaker: "carter",
   cfgScale: 1.5,
   inferenceSteps: 10,
-  prebufferSecs: 2.0,
-  rebufferThresholdSecs: 0.4,
-  resumeThresholdSecs: 1.5,
+  prebufferSecs: 5.0,
+  rebufferThresholdSecs: 1.0,
+  resumeThresholdSecs: 3.0,
   isGenerating: false,
   genElapsed: 0,
   genPct: null,
@@ -213,7 +240,10 @@ export default function HomePage() {
     }
 
     poll();
-    return () => { cancelled = true; clearTimeout(timeoutId); };
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   const handleGenerate = useCallback(async () => {
@@ -241,7 +271,6 @@ export default function HomePage() {
       <Header />
       <main className="flex-1 container mx-auto px-4 py-6 max-w-6xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
           {/* Left: script + audio player */}
           <div className="lg:col-span-2 flex flex-col gap-6">
             <TextInputPanel
@@ -261,12 +290,16 @@ export default function HomePage() {
               onCfgScaleChange={(v) => dispatch({ type: "SET_CFG_SCALE", payload: v })}
               inferenceSteps={state.inferenceSteps}
               onInferenceStepsChange={(v) => dispatch({ type: "SET_INFERENCE_STEPS", payload: v })}
-            prebufferSecs={state.prebufferSecs}
-            onPrebufferSecsChange={(v) => dispatch({ type: "SET_PREBUFFER_SECS", payload: v })}
-            rebufferThresholdSecs={state.rebufferThresholdSecs}
-            onRebufferThresholdChange={(v) => dispatch({ type: "SET_REBUFFER_THRESHOLD", payload: v })}
-            resumeThresholdSecs={state.resumeThresholdSecs}
-            onResumeThresholdChange={(v) => dispatch({ type: "SET_RESUME_THRESHOLD", payload: v })}
+              prebufferSecs={state.prebufferSecs}
+              onPrebufferSecsChange={(v) => dispatch({ type: "SET_PREBUFFER_SECS", payload: v })}
+              rebufferThresholdSecs={state.rebufferThresholdSecs}
+              onRebufferThresholdChange={(v) =>
+                dispatch({ type: "SET_REBUFFER_THRESHOLD", payload: v })
+              }
+              resumeThresholdSecs={state.resumeThresholdSecs}
+              onResumeThresholdChange={(v) =>
+                dispatch({ type: "SET_RESUME_THRESHOLD", payload: v })
+              }
               onGenerate={handleGenerate}
               onStop={stop}
               onPauseStream={pauseStream}
@@ -281,7 +314,6 @@ export default function HomePage() {
             />
             <StatusLog messages={state.logs} />
           </div>
-
         </div>
       </main>
     </div>

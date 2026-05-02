@@ -47,8 +47,7 @@ export default function StatusLog({ messages }: StatusLogProps) {
         ) : (
           messages.map((msg, i) => {
             const isError =
-              msg.toLowerCase().includes("error") ||
-              msg.toLowerCase().includes("failed");
+              msg.toLowerCase().includes("error") || msg.toLowerCase().includes("failed");
             const isSuccess =
               msg.toLowerCase().includes("done") ||
               msg.toLowerCase().includes("complete") ||

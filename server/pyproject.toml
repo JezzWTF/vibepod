@@ -8,7 +8,8 @@ dependencies = [
     # To switch back to CPU-only, remove the [tool.uv.sources] torch entry below.
     "torch>=2.0.0",
     # VibeVoice custom model + processor classes (not yet in upstream transformers)
-    "vibevoice @ git+https://github.com/microsoft/VibeVoice.git",
+    # Uses JezzWTF/VibeVoice fork so VibePod-specific optimisations land here.
+    "vibevoice @ git+https://github.com/JezzWTF/VibeVoice.git",
     # Exact version required by vibevoice's streaming TTS module
     "transformers==4.51.3",
     "fastapi>=0.111.0",
@@ -18,9 +19,35 @@ dependencies = [
     "huggingface_hub>=0.23.0",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.11.0",
+]
+
 # No build-system — this is a scripts project, not an installable package.
 # Lock file is committed so installs are reproducible.
 # Run `uv lock --upgrade` to bump dependencies.
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py310"
+exclude = [".git", ".venv", ".venv-cpu", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "B", "SIM", "I"]
+ignore = [
+    "E501",  # line-too-long — handled by formatter
+    "B905",  # zip() without strict= — existing code, lengths are known-correct
+]
+
+[tool.ruff.lint.per-file-ignores]
+"download_model.py" = ["T201"]  # allow print statements in CLI scripts
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
 
 [[tool.uv.index]]
 name = "pytorch-cu124"
