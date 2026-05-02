@@ -171,8 +171,39 @@ const initialState: AppState = {
   serverConfig: null,
 };
 
+const STORAGE_KEY = "vibepod_form";
+
+function loadSavedForm(): Partial<Pick<AppState, "script" | "speaker" | "cfgScale">> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Partial<Pick<AppState, "script" | "speaker" | "cfgScale">>;
+  } catch {
+    return {};
+  }
+}
+
 export default function HomePage() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, initialState, (base) => {
+    const saved = loadSavedForm();
+    return {
+      ...base,
+      ...(saved.script !== undefined && { script: saved.script }),
+      ...(saved.speaker !== undefined && { speaker: saved.speaker }),
+      ...(typeof saved.cfgScale === "number" && { cfgScale: saved.cfgScale }),
+    };
+  });
+
+  // Persist user-editable form fields across navigation.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ script: state.script, speaker: state.speaker, cfgScale: state.cfgScale })
+      );
+    } catch {}
+  }, [state.script, state.speaker, state.cfgScale]);
 
   const wordCount = state.script.trim() === "" ? 0 : state.script.trim().split(/\s+/).length;
 

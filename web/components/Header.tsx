@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type ServerStatus = "checking" | "downloading" | "loading" | "online" | "error" | "offline";
 type Device = "cpu" | "cuda" | null;
@@ -9,7 +11,13 @@ type Device = "cpu" | "cuda" | null;
 const FAST_INTERVAL_MS = 3000; // while checking / loading
 const SLOW_INTERVAL_MS = 30000; // once online
 
+const NAV_LINKS = [
+  { href: "/", label: "Generate" },
+  { href: "/library", label: "Library" },
+];
+
 export default function Header() {
+  const pathname = usePathname();
   const [status, setStatus] = useState<ServerStatus>("checking");
   const [device, setDevice] = useState<Device>(null);
   const [message, setMessage] = useState<string | undefined>();
@@ -123,6 +131,7 @@ export default function Header() {
     >
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
+
           <div
             className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-bold"
             style={{
@@ -148,6 +157,26 @@ export default function Header() {
             </p>
           </div>
         </div>
+
+        {/* Nav links */}
+        <nav className="flex items-center gap-1 ml-2">
+          {NAV_LINKS.map(({ href, label }) => {
+            const active = pathname === href;
+            return (
+              <Link
+                key={href}
+                href={href}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  background: active ? "var(--accent-teal-dim)" : "transparent",
+                  color: active ? "var(--accent-teal)" : "var(--muted)",
+                }}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
 
       <div className="flex items-center gap-2">

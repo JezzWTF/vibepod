@@ -137,7 +137,7 @@ Build inside the existing stack. New packages require a written reason in this d
 |---|---|---|
 | `zustand` | Studio editor state | Phase 2 |
 | `@dnd-kit/core` + `@dnd-kit/utilities` | Clip drag-and-drop in timeline | Phase 2 |
-| `better-sqlite3` | SQLite for job and project persistence | Phase 1 |
+| `better-sqlite3` | SQLite for project/studio persistence (Next.js layer) | Phase 2 |
 
 **Conditionally approved (evaluate at phase start):**
 
@@ -712,11 +712,11 @@ Render runs in a background thread. The client polls `GET /api/projects/:id/rend
 **Goal:** Clean foundation. No new features.
 
 Tasks:
-- [ ] Extract WAV assembly from `useStreamingGeneration.ts` into `web/lib/audio/wav.ts`
-- [ ] Extract waveform peak generation into `server/waveform.py`
-- [ ] Confirm generation cancellation works cleanly (stream abort + server cancel_event)
-- [ ] Add `nanoid` to backend for stable generation IDs
-- [ ] Add `data/` directory to `.gitignore`
+- [x] Extract WAV assembly from `useStreamingGeneration.ts` into `web/lib/audio/wav.ts`
+- [x] Extract waveform peak generation into `server/waveform.py`
+- [x] Confirm generation cancellation works cleanly (stream abort + server cancel_event)
+- [x] Add stable generation IDs to backend (`server/ids.py` via `secrets.token_urlsafe`)
+- [x] Add `data/` directory to `.gitignore`
 
 **Acceptance:** WAV assembly is a pure function with unit tests. Generation IDs are stable.
 
@@ -727,25 +727,23 @@ Tasks:
 **Goal:** Every generation is saved. Users can browse, play, and download past generations.
 
 **Backend tasks:**
-- [ ] Add SQLite setup (`data/db/vibepod.db`, schema migration 001)
-- [ ] `generations` table: `id, created_at, status, script, speaker, cfg_scale, inference_steps, duration_secs, sample_rate, audio_path, waveform_path, error_message`
-- [ ] On generation complete: save WAV to `data/generations/<id>/audio.wav`
-- [ ] On generation complete: compute and save waveform peaks to `data/generations/<id>/waveform.json`
-- [ ] Implement `GET /api/generations` (list, paginated)
-- [ ] Implement `GET /api/generations/:id` (single)
-- [ ] Implement `GET /api/generations/:id/audio` (stream file)
-- [ ] Implement `GET /api/generations/:id/waveform` (peaks JSON)
-- [ ] Implement `DELETE /api/generations/:id` (delete row + files)
+- [x] Add SQLite setup (`data/db/vibepod.db`)
+- [x] `generations` table: `id, created_at, status, script, speaker, cfg_scale, inference_steps, duration_secs, sample_rate, audio_path, waveform_path, error_message`
+- [x] On generation complete: save WAV to `data/generations/<id>/audio.wav`
+- [x] On generation complete: compute and save waveform peaks to `data/generations/<id>/waveform.json`
+- [x] Implement `GET /api/generations` (list, paginated)
+- [x] Implement `GET /api/generations/:id` (single)
+- [x] Implement `GET /api/generations/:id/audio` (stream file)
+- [x] Implement `GET /api/generations/:id/waveform` (peaks JSON)
+- [x] Implement `DELETE /api/generations/:id` (delete row + files)
 
 **Frontend tasks:**
-- [ ] Install `better-sqlite3` + types
-- [ ] Create `web/lib/db/` — schema, migration runner, query helpers
-- [ ] Create `/library` route and `LibraryPage` component
-- [ ] `GenerationCard` component: waveform preview canvas, metadata, play/download/delete actions
-- [ ] `WaveformPreview` component: draws peaks on canvas (static, no playback)
-- [ ] Mini audio player for library card playback (reuse `useAudioPlayer` hook)
-- [ ] Link "Open in Studio" button (navigates to `/studio/new?fromGeneration=<id>`)
-- [ ] Add "Library" link to `Header`
+- [x] Create `/library` route and `LibraryPage` component
+- [x] `GenerationCard` component: waveform preview canvas, metadata, play/download/delete actions
+- [x] `WaveformPreview` component: draws peaks on canvas (static, no playback)
+- [x] Mini audio player for library card playback
+- [ ] Link "Open in Studio" button (navigates to `/studio/new?fromGeneration=<id>`) — deferred to Phase 2
+- [x] Add "Library" link to `Header`
 
 **Acceptance:**
 - Generate audio → close browser → reopen → generation appears in library with waveform
@@ -771,6 +769,8 @@ Tasks:
 - [ ] Implement basic render endpoint (single voice track, WAV out only)
 
 **Frontend tasks:**
+- [ ] Install `better-sqlite3` + types
+- [ ] Create `web/lib/db/` — schema, migration runner, query helpers
 - [ ] Install `zustand`, `@dnd-kit/core`, `@dnd-kit/utilities`
 - [ ] Create Studio Zustand store (`web/stores/studioStore.ts`)
   - Project state, selected clip, playhead time, zoom, isPlaying, undo stack
