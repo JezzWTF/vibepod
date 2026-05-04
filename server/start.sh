@@ -105,7 +105,7 @@ elif $ROCM_MODE; then
     fi
     uv sync --no-sources
     echo "--> Installing PyTorch ROCm 6.2 wheel..."
-    uv pip install torch --index-url https://download.pytorch.org/whl/rocm6.2
+    uv pip install torch --index-url https://download.pytorch.org/whl/rocm6.2 --reinstall-package torch
     if [[ -n "$LOCK_BACKUP" ]]; then
         cp "$LOCK_BACKUP" uv.lock
         rm -f "$LOCK_BACKUP"
