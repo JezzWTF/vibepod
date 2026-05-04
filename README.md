@@ -37,6 +37,7 @@ cp .env.example .env.local
 # 4. Start everything
 pnpm dev          # CUDA (requires NVIDIA GPU + driver >= 525.60)
 pnpm dev:cpu      # CPU-only (no GPU required)
+pnpm dev:rocm     # ROCm (requires AMD GPU + ROCm 6.2+, Linux only)
 ```
 
 `pnpm dev` / `pnpm dev:cpu` start both services concurrently:
@@ -46,26 +47,31 @@ pnpm dev:cpu      # CPU-only (no GPU required)
 
 The frontend shows a loading indicator while the model downloads. Once the server reports `status: online`, generation is available.
 
-## CUDA vs CPU
+## CUDA vs CPU vs ROCm
 
-VibePod maintains two completely separate Python virtual environments so CUDA and CPU torch installs never conflict:
+VibePod maintains three completely separate Python virtual environments so torch installs never conflict:
 
-| Mode           | Command        | venv               | torch source            |
-| -------------- | -------------- | ------------------ | ----------------------- |
-| CUDA (default) | `pnpm dev`     | `server/.venv`     | PyTorch CUDA 12.4 index |
-| CPU-only       | `pnpm dev:cpu` | `server/.venv-cpu` | PyPI (CPU wheel)        |
+| Mode           | Command          | venv                  | torch source              |
+| -------------- | ---------------- | --------------------- | ------------------------- |
+| CUDA (default) | `pnpm dev`       | `server/.venv`        | PyTorch CUDA 12.4 index   |
+| CPU-only       | `pnpm dev:cpu`   | `server/.venv-cpu`    | PyPI (CPU wheel)          |
+| ROCm (AMD GPU) | `pnpm dev:rocm`  | `server/.venv-rocm`   | PyTorch ROCm 6.2 index    |
 
-On first run, each mode creates its own venv automatically. You can switch between them freely — they are fully independent. The active device is reported by the `/health` endpoint as `"device": "cpu"` or `"device": "cuda"`.
+On first run, each mode creates its own venv automatically. You can switch between them freely — they are fully independent. The active device is reported by the `/health` endpoint as `"device": "cpu"`, `"device": "cuda"`, or `"device": "rocm"`.
 
 > **CUDA requirement:** driver >= 525.60 (RTX 30/40 series all qualify). Run `nvidia-smi` to check.
+
+> **ROCm requirement:** ROCm 6.2+ installed on Linux. Supported GPUs: AMD RX 6000 series (RDNA2) or newer, RX 7000 series (RDNA3), and Instinct accelerators. ROCm is not supported on Windows. Flash attention is not available on ROCm — SDPA is used instead.
 
 ## Individual commands
 
 ```bash
 pnpm dev              # CUDA — server + web
 pnpm dev:cpu          # CPU  — server + web
+pnpm dev:rocm         # ROCm — server + web
 pnpm dev:server       # CUDA — Python server only
 pnpm dev:server:cpu   # CPU  — Python server only
+pnpm dev:server:rocm  # ROCm — Python server only
 pnpm dev:web          # Next.js only (no Python server)
 pnpm build            # Production build of the frontend
 ```
@@ -133,4 +139,4 @@ cd server && uv add <package>
 cd server && uv lock --upgrade
 ```
 
-> **Note:** The `[tool.uv.sources]` block in `pyproject.toml` pulls torch from the PyTorch CUDA 12.4 index by default. Running with `--cpu` (or `uv sync --no-sources`) bypasses this and installs the standard PyPI CPU wheel instead.
+> **Note:** The `[tool.uv.sources]` block in `pyproject.toml` pulls torch from the PyTorch CUDA 12.4 index by default. Running with `--cpu` or `--rocm` (or `uv sync --no-sources`) bypasses this and installs the standard PyPI CPU wheel first; for ROCm, the torch wheel is then replaced with the PyTorch ROCm 6.2 build.
