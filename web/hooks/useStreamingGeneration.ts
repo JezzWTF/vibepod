@@ -89,9 +89,19 @@ function buildWav(samples: Float32Array<ArrayBuffer>, sampleRate: number): Blob 
  * Decodes a base64-encoded string into a Float32Array of PCM samples.
  */
 function decodeFloat32Chunk(data: string): Float32Array<ArrayBuffer> {
+  // Use modern browser-native base64 decoding if available (ES2024+)
+  // Cast Uint8Array to any to bypass TS error since fromBase64 is a newer standard
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof (Uint8Array as any).fromBase64 === "function") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new Float32Array((Uint8Array as any).fromBase64(data).buffer);
+  }
+
+  // Fallback for older browsers
   const raw = atob(data);
-  const bytes = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i += 1) {
+  const len = raw.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
     bytes[i] = raw.charCodeAt(i);
   }
   return new Float32Array(bytes.buffer as ArrayBuffer);
