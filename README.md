@@ -1,136 +1,57 @@
-# VibePod
+# VibePod Studio
 
-A text-to-speech podcast generator powered by [VibeVoice 0.5B](https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B). Paste a script, tune a couple of sliders, and get a WAV back.
+A local script-first podcast studio for an NVIDIA GPU. This rebuild delivers saved line takes with Qwen3-TTS 1.7B, reusable cloned voices, waveform previews, and a persistent library. Episode editing (#19) and feed-ready export (#20) follow later.
 
-## Architecture
+## Windows setup
 
-```
-VibePod/
-├── web/        Next.js 15 frontend (React 19, Tailwind CSS 4, TypeScript)
-└── server/     FastAPI TTS backend  (Python 3.10+, VibeVoice, UV)
-```
+Install uv, Node.js, pnpm, and a recent NVIDIA driver. The verified target is RTX 4070 12 GB with Python 3.12.9 and torch/torchaudio 2.8.0 CUDA 12.8. Dependencies are locked in `server/uv.lock`; SDPA is the default attention implementation. Flash attention remains an optional spike experiment, not a runtime dependency.
 
-The Next.js app proxies audio generation requests to the FastAPI server, keeping CORS out of the picture and the Python model off the browser.
+From the repository root, in separate PowerShell terminals:
 
-## Prerequisites
-
-| Tool                               | Install                             |
-| ---------------------------------- | ----------------------------------- |
-| [Node.js 20+](https://nodejs.org)  | `winget install OpenJS.NodeJS.LTS`  |
-| [pnpm](https://pnpm.io)            | `npm i -g pnpm`                     |
-| [Python 3.10+](https://python.org) | `winget install Python.Python.3.13` |
-| [uv](https://docs.astral.sh/uv/)   | `winget install astral-sh.uv`       |
-
-## Getting started
-
-```bash
-# 1. Clone
-git clone https://github.com/JezzWTF/vibepod.git
-cd vibepod
-
-# 2. Install Node dependencies (root + web workspace)
-pnpm install
-
-# 3. Copy env file and fill in values
-cp .env.example .env.local
-
-# 4. Start everything
-pnpm dev          # CUDA (requires NVIDIA GPU + driver >= 525.60)
-pnpm dev:cpu      # CPU-only (no GPU required)
+```powershell
+pnpm install --frozen-lockfile
+./server/start.ps1
+pnpm dev:web
 ```
 
-`pnpm dev` / `pnpm dev:cpu` start both services concurrently:
+Open http://localhost:3000. Upload a clean 3–30 second WAV, name the voice, write a line, and generate. Takes appear in Library, where they can be played, downloaded, or deleted. The first take loads/downloads the pinned public Base checkpoint and can take several minutes; models run locally thereafter. An optional exact transcript enables transcript-assisted cloning; leave it blank for speaker-embedding cloning.
 
-- **SERVER** — `http://localhost:8000` — on first run uv creates the Python venv and downloads the ~1 GB VibeVoice model from HuggingFace
-- **WEB** — `http://localhost:3000` — Next.js dev server with Turbopack
+The Windows launcher places the environment under `%LOCALAPPDATA%/VibePod/venv`, saving workspace disk space. Override with `VIBEPOD_VENV`. For Git Bash, `pnpm dev` runs both services and uses `server/.venv` unless overridden. CPU mode is unsupported.
 
-The frontend shows a loading indicator while the model downloads. Once the server reports `status: online`, generation is available.
+Optional environment variables (set in the shell before starting):
 
-## CUDA vs CPU
-
-VibePod maintains two completely separate Python virtual environments so CUDA and CPU torch installs never conflict:
-
-| Mode           | Command        | venv               | torch source            |
-| -------------- | -------------- | ------------------ | ----------------------- |
-| CUDA (default) | `pnpm dev`     | `server/.venv`     | PyTorch CUDA 12.4 index |
-| CPU-only       | `pnpm dev:cpu` | `server/.venv-cpu` | PyPI (CPU wheel)        |
-
-On first run, each mode creates its own venv automatically. You can switch between them freely — they are fully independent. The active device is reported by the `/health` endpoint as `"device": "cpu"` or `"device": "cuda"`.
-
-> **CUDA requirement:** driver >= 525.60 (RTX 30/40 series all qualify). Run `nvidia-smi` to check.
-
-## Individual commands
-
-```bash
-pnpm dev              # CUDA — server + web
-pnpm dev:cpu          # CPU  — server + web
-pnpm dev:server       # CUDA — Python server only
-pnpm dev:server:cpu   # CPU  — Python server only
-pnpm dev:web          # Next.js only (no Python server)
-pnpm build            # Production build of the frontend
+```powershell
+$env:VIBEPOD_MODEL_PATH = 'C:/models/qwen-base'
+$env:VIBEPOD_DESIGN_MODEL_PATH = 'C:/models/qwen-design'
+$env:VIBEPOD_VENV = 'C:/venvs/vibepod'
+$env:VIBEPOD_PORT = '8000'
 ```
 
-## Environment variables
+For a prefetch resilient to interrupted downloads, run `uv run spike/download.py Qwen/Qwen3-TTS-12Hz-1.7B-Base C:/models/qwen-base` from `server`. `HF_HOME` selects the Hugging Face cache. The public models need no login.
 
-Copy `.env.example` to `.env.local` and set:
+Set `VIBEPOD_SERVER_URL` in `web/.env.local` if changing the backend address. The server binds to loopback. Keep the frontend local too; it has no authentication and is intended for a trusted local user.
 
-| Variable               | Default                 | Description                                               |
-| ---------------------- | ----------------------- | --------------------------------------------------------- |
-| `VIBEVOICE_SERVER_URL` | `http://localhost:8000` | URL the Next.js API routes use to reach the Python server |
-| `HF_TOKEN`             | —                       | HuggingFace token (required if the model repo is gated)   |
-| `HF_HOME`              | —                       | Override the HuggingFace model cache directory            |
+## Data and API
 
-## Project structure
+`data/db/vibepod.db` retains the Phase 1 SQLite generation rows. New `take_` records share this store; completed audio and waveform JSON live under `data/generations/<id>`. References live under `data/voices`. Back up the whole `data` directory. Data is ignored by Git.
 
-```
-web/
-├── app/
-│   ├── api/generate/   Proxies POST requests to the Python server
-│   ├── api/health/     Proxies health checks (status: loading | online | error)
-│   ├── page.tsx        Main UI — script input, controls, audio player
-│   └── layout.tsx
-├── components/
-│   ├── Header.tsx
-│   ├── TextInputPanel.tsx
-│   ├── GenerationControls.tsx   cfg_scale and inference_steps sliders
-│   ├── AudioPlayer.tsx
-│   └── StatusLog.tsx
-└── hooks/
-    └── useAudioPlayer.ts
+- `GET /health`, `GET /voices`, `POST /voices` (multipart name, file, optional transcript)
+- `POST /takes` with `{ "text": "Hello", "voice_id": "voice_...", "seed": 42 }` returns a persisted queued take (202).
+- `GET /takes`, `GET /takes/{id}`, `POST /takes/{id}/cancel`
+- `GET /takes/{id}/audio`, `GET /takes/{id}/waveform`, `DELETE /takes/{id}`
 
-server/
-├── vibevoice_server.py   FastAPI app — /health and /generate endpoints
-├── download_model.py     One-shot HuggingFace model prefetch
-├── start.sh              Entry point: uv sync → model check → uvicorn
-└── pyproject.toml        Python deps managed by uv
+One worker serializes GPU work. Cancellation stops decoding and prevents publishing a completed result; deletion waits until the worker releases it. Restart marks unfinished takes interrupted. Read/delete `/generations` aliases retain Phase 1 compatibility. Old tuning fields remain only in the database to read existing records.
+
+Only `server/model_adapter.py` imports the model runtime. Its `synthesize(text, voice, settings)` returns audio; `design` creates a reference with VoiceDesign, unloading Base first to stay within VRAM. Designing voices in the product UI is future work.
+
+## Checks
+
+```powershell
+pnpm build
+pnpm format:check
+cd server
+uv run ruff check .
+uv run python -m unittest discover -s tests
 ```
 
-## Generation parameters
-
-| Parameter         | Range                                               | Default  | Effect                                         |
-| ----------------- | --------------------------------------------------- | -------- | ---------------------------------------------- |
-| `speaker`         | `carter`, `davis`, `emma`, `frank`, `grace`, `mike` | `carter` | Voice preset used for the generated audio      |
-| `cfg_scale`       | 0.5 – 4.0                                           | 1.5      | Higher = more expressive guidance              |
-| `inference_steps` | 5 – 20                                              | 10       | More steps = higher quality, slower generation |
-
-## How it works
-
-1. The user pastes a script and hits **Generate**
-2. The Next.js `/api/generate` route forwards the request to FastAPI on port 8000
-3. FastAPI runs the text through the VibeVoice streaming processor and inference model
-4. Audio chunks stream back to the browser as SSE events containing base64 float32 PCM
-5. The browser plays the chunks live, assembles a WAV Blob, and loads it into the audio player
-
-## Python dependencies
-
-Managed by [uv](https://docs.astral.sh/uv/). The `server/uv.lock` is committed so installs are fully reproducible.
-
-```bash
-# Add a package
-cd server && uv add <package>
-
-# Upgrade all dependencies
-cd server && uv lock --upgrade
-```
-
-> **Note:** The `[tool.uv.sources]` block in `pyproject.toml` pulls torch from the PyTorch CUDA 12.4 index by default. Running with `--cpu` (or `uv sync --no-sources`) bypasses this and installs the standard PyPI CPU wheel instead.
+See [the model evidence](docs/model-spike.md) and [the build plan](docs/studio-build-plan.md).

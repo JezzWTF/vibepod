@@ -1,61 +1,27 @@
 [project]
 name = "vibepod-server"
-version = "0.1.0"
-description = "VibePod TTS Server — VibeVoice FastAPI backend"
-requires-python = ">=3.10"
+version = "0.2.0"
+description = "VibePod Studio GPU line-take backend"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    # torch is listed explicitly so uv pulls the CUDA wheel (see [tool.uv.sources]).
-    # To switch back to CPU-only, remove the [tool.uv.sources] torch entry below.
-    "torch>=2.0.0",
-    # VibeVoice custom model + processor classes (not yet in upstream transformers)
-    # Uses JezzWTF/VibeVoice fork so VibePod-specific optimisations land here.
-    "vibevoice @ git+https://github.com/JezzWTF/VibeVoice.git",
-    # Exact version required by vibevoice's streaming TTS module
-    "transformers==4.51.3",
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.29.0",
-    "soundfile>=0.12.1",
-    "pydantic>=2.7.0",
-    "huggingface_hub>=0.23.0",
+  "torch==2.8.0", "torchaudio==2.8.0", "qwen-tts==0.1.1",
+  "transformers==4.57.3", "accelerate==1.12.0", "huggingface-hub==0.36.2",
+  "fastapi==0.142.2", "uvicorn==0.54.0", "soundfile==0.14.0",
+  "pydantic==2.13.5", "python-multipart==0.0.32", "requests>=2.32.2"
 ]
-
 [dependency-groups]
-dev = [
-    "ruff>=0.11.0",
-]
-
-# No build-system — this is a scripts project, not an installable package.
-# Lock file is committed so installs are reproducible.
-# Run `uv lock --upgrade` to bump dependencies.
-
+dev = ["ruff>=0.11.0", "httpx==0.28.1"]
 [tool.ruff]
 line-length = 100
-indent-width = 4
-target-version = "py310"
-exclude = [".git", ".venv", ".venv-cpu", "__pycache__"]
-
+target-version = "py312"
+exclude = [".git", ".venv", "spike/results", "__pycache__"]
 [tool.ruff.lint]
 select = ["E", "F", "UP", "B", "SIM", "I"]
-ignore = [
-    "E501",  # line-too-long — handled by formatter
-    "B905",  # zip() without strict= — existing code, lengths are known-correct
-]
-
-[tool.ruff.lint.per-file-ignores]
-"download_model.py" = ["T201"]  # allow print statements in CLI scripts
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "lf"
-
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
-explicit = true
-
+ignore = ["E501", "B905", "B008"]
 [tool.uv.sources]
-# Pull torch from the PyTorch CUDA 12.4 index instead of PyPI's CPU-only wheel.
-# CUDA 12.4 runs on any driver >= 525.60 (RTX 30/40 series all qualify).
-# To use CPU instead: remove this block and run `uv sync --reinstall-package torch`.
-torch = { index = "pytorch-cu124" }
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
