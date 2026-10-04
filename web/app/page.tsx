@@ -1,189 +1,206 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import AudioPlayer from "@/components/AudioPlayer";
-import type { GenerationJob } from "@/lib/types/generation";
+
 type Voice = { id: string; name: string };
-async function json(r: Response) {
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.detail ?? d.error ?? "Request failed");
-  return d;
+type Block = { id?: string; speaker: string; voice_id: string; text: string };
+type Take = { id: string; status: string; error_message: string | null };
+type Episode = { id: string; title: string; blocks: Block[] };
+async function read(response: Response) {
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail ?? data.error ?? "Request failed");
+  return data;
 }
-export default function Page() {
+const blank = (speaker = "Host"): Block => ({ speaker, voice_id: "", text: "" });
+
+export default function StudioPage() {
   const [voices, setVoices] = useState<Voice[]>([]),
-    [voice, setVoice] = useState(""),
-    [text, setText] = useState("");
-  const [take, setTake] = useState<GenerationJob | null>(null),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const active = take?.status === "queued" || take?.status === "generating";
+    [episode, setEpisode] = useState<Episode | null>(null);
+  const [title, setTitle] = useState("Untitled episode"),
+    [blocks, setBlocks] = useState<Block[]>([blank("Host"), blank("Guest")]);
+  const [takes, setTakes] = useState<Record<string, Take>>({}),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState("");
   useEffect(() => {
     fetch("/api/voices")
-      .then(json)
+      .then(read)
       .then(setVoices)
       .catch((e) => setError(e.message));
   }, []);
-  useEffect(() => {
-    if (!active || !take) return;
-    const timer = setInterval(
-      () =>
-        fetch(`/api/takes/${take.id}`)
-          .then(json)
-          .then(setTake)
-          .catch((e) => setError(e.message)),
-      1500
+  const selectedAudio = useMemo(() => {
+    const id = Object.values(takes).find((take) => take.status === "complete")?.id;
+    return id ? `/api/takes/${id}/audio` : null;
+  }, [takes]);
+  function editBlock(index: number, changes: Partial<Block>) {
+    setBlocks((current) =>
+      current.map((block, i) => (i === index ? { ...block, ...changes } : block))
     );
-    return () => clearInterval(timer);
-  }, [active, take]);
-  async function clone(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    setBusy(true);
+  }
+  async function saveEpisode() {
+    setSaving(true);
     setError("");
     try {
-      const created = await json(
-        await fetch("/api/voices", { method: "POST", body: new FormData(form) })
-      );
-      setVoices((v) => [...v, created]);
-      setVoice(created.id);
-      form.reset();
+      const response = await fetch(episode ? `/api/episodes/${episode.id}` : "/api/episodes", {
+        method: episode ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, blocks }),
+      });
+      const saved = await read(response);
+      setEpisode(saved);
+      setBlocks(saved.blocks);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
-  async function generate() {
-    setBusy(true);
+  async function generate(index: number) {
+    const block = blocks[index];
+    if (!episode || !block.id || !block.voice_id || !block.text.trim()) return;
     setError("");
     try {
-      setTake(
-        await json(
-          await fetch("/api/takes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text, voice_id: voice }),
-          })
-        )
+      const take = await read(
+        await fetch("/api/takes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: block.text,
+            voice_id: block.voice_id,
+            episode_id: episode.id,
+            block_id: block.id,
+          }),
+        })
       );
+      setTakes((current) => ({ ...current, [block.id!]: take }));
+      const timer = setInterval(async () => {
+        const updated = await read(await fetch(`/api/takes/${take.id}`));
+        setTakes((current) => ({ ...current, [block.id!]: updated }));
+        if (!["queued", "generating"].includes(updated.status)) clearInterval(timer);
+      }, 1500);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   }
   return (
     <>
       <Header />
-      <main className="max-w-3xl mx-auto p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-semibold">Create a line take</h1>
-          <p className="mt-2 text-sm">
-            Choose a voice, write a line, and keep its audio in your library.
-          </p>
-        </div>
-        <form
-          onSubmit={clone}
-          className="rounded-xl border p-5 space-y-3"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <h2 className="font-semibold">Add a cloned voice</h2>
-          <p className="text-sm">Upload 3–30 seconds of clean speech as a WAV.</p>
-          <label className="block">
-            Voice name
-            <input
-              name="name"
-              required
-              maxLength={80}
-              className="block w-full border rounded p-2 mt-1"
-            />
-          </label>
-          <label className="block">
-            Reference WAV
-            <input
-              name="file"
-              type="file"
-              accept=".wav,audio/wav"
-              required
-              className="block mt-1"
-            />
-          </label>
-          <label className="block">
-            Transcript (optional)
-            <input
-              name="transcript"
-              maxLength={4000}
-              className="block w-full border rounded p-2 mt-1"
-            />
-          </label>
-          <button disabled={busy} className="border rounded px-4 py-2 disabled:opacity-40">
-            Save voice
-          </button>
-        </form>
-        <section className="space-y-4">
-          <label className="block">
-            Voice
-            <select
-              value={voice}
-              onChange={(e) => setVoice(e.target.value)}
-              className="block w-full border rounded p-2 mt-1"
+      <main className="max-w-5xl mx-auto p-6 space-y-6">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p
+              className="text-sm uppercase tracking-widest"
+              style={{ color: "var(--accent-teal)" }}
             >
-              <option value="">Choose a saved voice</option>
-              {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            Line
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={4000}
-              rows={5}
-              className="block w-full border rounded p-3 mt-1"
-            />
-          </label>
+              Studio
+            </p>
+            <h1 className="text-3xl font-semibold">Build an episode from the script</h1>
+            <p className="mt-2 text-sm">
+              Each block keeps its own take. Regenerate a line without rebuilding the conversation.
+            </p>
+          </div>
           <button
-            disabled={busy || active || !voice || !text.trim()}
-            onClick={generate}
-            className="border rounded px-5 py-2 disabled:opacity-40"
+            onClick={saveEpisode}
+            disabled={saving}
+            className="border rounded px-4 py-2 disabled:opacity-40"
           >
-            {active ? "Generating…" : "Generate take"}
+            {saving ? "Saving…" : "Save episode"}
           </button>
-          {active && (
-            <button
-              className="ml-3 underline"
-              onClick={async () => {
-                try {
-                  setTake(
-                    await json(await fetch(`/api/takes/${take!.id}/cancel`, { method: "POST" }))
-                  );
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
+        </div>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full border rounded p-3 text-lg"
+          aria-label="Episode title"
+        />
+        <section className="space-y-3">
+          {blocks.map((block, index) => (
+            <article
+              key={block.id ?? index}
+              className="rounded-xl border p-4 space-y-3"
+              style={{ borderColor: "var(--border)" }}
             >
-              Cancel
-            </button>
-          )}
-          {take && (
-            <p role="status">
-              Take: {take.status}
-              {take.error_message ? ` — ${take.error_message}` : ""}
-            </p>
-          )}
-          {error && (
-            <p role="alert" style={{ color: "var(--error)" }}>
-              {error}
-            </p>
-          )}
-          <AudioPlayer
-            audioUrl={take?.status === "complete" ? `/api/takes/${take.id}/audio` : null}
-          />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold">Block {index + 1}</span>
+                <button
+                  onClick={() => setBlocks((current) => current.filter((_, i) => i !== index))}
+                  className="text-sm underline"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  value={block.speaker}
+                  onChange={(e) => editBlock(index, { speaker: e.target.value })}
+                  placeholder="Speaker name"
+                  className="border rounded p-2"
+                  aria-label={`Speaker ${index + 1}`}
+                />
+                <select
+                  value={block.voice_id}
+                  onChange={(e) => editBlock(index, { voice_id: e.target.value })}
+                  className="border rounded p-2"
+                  aria-label={`Voice ${index + 1}`}
+                >
+                  <option value="">Assign a voice</option>
+                  {voices.map((voice) => (
+                    <option key={voice.id} value={voice.id}>
+                      {voice.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <textarea
+                value={block.text}
+                onChange={(e) => editBlock(index, { text: e.target.value })}
+                rows={3}
+                placeholder="Write this line…"
+                className="w-full border rounded p-3"
+                aria-label={`Script line ${index + 1}`}
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => generate(index)}
+                  disabled={!episode || !block.id || !block.voice_id || !block.text.trim()}
+                  className="border rounded px-3 py-2 disabled:opacity-40"
+                >
+                  {takes[block.id ?? ""]?.status === "generating" ? "Generating…" : "Generate take"}
+                </button>
+                {takes[block.id ?? ""] && (
+                  <span className="text-sm" role="status">
+                    {takes[block.id ?? ""].status}
+                  </span>
+                )}
+              </div>
+            </article>
+          ))}
         </section>
+        <button
+          onClick={() =>
+            setBlocks((current) => [...current, blank(current.length % 2 ? "Guest" : "Host")])
+          }
+          className="border rounded px-4 py-2"
+        >
+          + Add script block
+        </button>
+        {selectedAudio && (
+          <section className="rounded-xl border p-4" style={{ borderColor: "var(--border)" }}>
+            <h2 className="font-semibold mb-3">Selected takes</h2>
+            <AudioPlayer audioUrl={selectedAudio} />
+          </section>
+        )}
+        {error && (
+          <p role="alert" style={{ color: "var(--error)" }}>
+            {error}
+          </p>
+        )}
+        {!episode && (
+          <p className="text-sm" style={{ color: "var(--muted)" }}>
+            Save the episode once to create its persistent blocks, then generate each assigned line.
+          </p>
+        )}
       </main>
     </>
   );

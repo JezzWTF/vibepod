@@ -11,6 +11,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+import episode_store as episodes
 import generation_store as store
 import voice_store as voices
 from ids import take_id
@@ -21,6 +22,7 @@ from waveform import write_peaks
 @asynccontextmanager
 async def lifespan(app):
     store.init_db()
+    episodes.init_episodes()
     app.state.adapter = QwenAdapter()
     app.state.worker = ThreadPoolExecutor(max_workers=1)
     app.state.pending = {}
@@ -38,6 +40,8 @@ class TakeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     voice_id: str
     seed: int = Field(default=42, ge=0, le=2147483647)
+    episode_id: str | None = None
+    block_id: str | None = None
 
 
 def require_take(tid):
@@ -112,12 +116,51 @@ def create_take(request: TakeRequest):
         raise HTTPException(404, "Voice not found")
     tid, event = take_id(), threading.Event()
     store.create_job(
-        tid, request.text, voice["name"], voice["id"], json.dumps({"seed": request.seed})
+        tid,
+        request.text,
+        voice["name"],
+        voice["id"],
+        json.dumps({"seed": request.seed}),
+        request.episode_id,
+        request.block_id,
     )
     with app.state.lock:
         app.state.pending[tid] = event
     app.state.worker.submit(render, tid, request, voice, event)
     return require_take(tid)
+
+
+class EpisodeRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    blocks: list[dict] = Field(min_length=1, max_length=100)
+
+
+@app.post("/episodes", status_code=201)
+def create_episode(request: EpisodeRequest):
+    if any(not str(block.get("text", "")).strip() for block in request.blocks):
+        raise HTTPException(422, "Every script block needs text")
+    return episodes.create(request.title, request.blocks)
+
+
+@app.get("/episodes")
+def list_episodes():
+    return {"items": episodes.list_all()}
+
+
+@app.get("/episodes/{eid}")
+def get_episode(eid: str):
+    episode = episodes.get(eid)
+    if not episode:
+        raise HTTPException(404, "Episode not found")
+    return episode
+
+
+@app.put("/episodes/{eid}")
+def update_episode(eid: str, request: EpisodeRequest):
+    result = episodes.update(eid, request.title, request.blocks)
+    if not result:
+        raise HTTPException(404, "Episode not found")
+    return result
 
 
 @app.get("/generations")

@@ -59,7 +59,7 @@ def init_db() -> None:
     with _connect() as conn:
         conn.execute(_CREATE_GENERATIONS)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(generations)")}
-        for name in ("voice_id", "model_id", "settings_json"):
+        for name in ("voice_id", "model_id", "settings_json", "episode_id", "block_id"):
             if name not in columns:
                 conn.execute(f"ALTER TABLE generations ADD COLUMN {name} TEXT")
         conn.execute(
@@ -67,11 +67,20 @@ def init_db() -> None:
         )
 
 
-def create_job(job_id, text, voice, voice_id, settings_json):
+def create_job(job_id, text, voice, voice_id, settings_json, episode_id=None, block_id=None):
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json) VALUES (?,?,'queued',?,?,0,?,'Qwen3-TTS-12Hz-1.7B-Base',?)",
-            (job_id, datetime.now(UTC).isoformat(), text, voice, voice_id, settings_json),
+            "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json,episode_id,block_id) VALUES (?,?,'queued',?,?,0,?,'Qwen3-TTS-12Hz-1.7B-Base',?,?,?)",
+            (
+                job_id,
+                datetime.now(UTC).isoformat(),
+                text,
+                voice,
+                voice_id,
+                settings_json,
+                episode_id,
+                block_id,
+            ),
         )
 
 
