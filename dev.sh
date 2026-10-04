@@ -4,7 +4,6 @@
 #
 # Usage:
 #   ./dev.sh        — start with CUDA (default)
-#   ./dev.sh --cpu  — start server in CPU-only mode (separate .venv-cpu)
 
 set -uo pipefail
 
@@ -20,7 +19,6 @@ prefix() {
     done
 }
 
-# Forward any flags (e.g. --cpu) straight to start.sh
 SERVER_FLAGS=("$@")
 
 echo "Starting VibePod — Ctrl+C to stop all"

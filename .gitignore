@@ -1,7 +1,7 @@
 # Python
 server/.venv/
-server/.venv-cpu/
-server/voices/
+server/.venv-spike-*/
+server/spike/results/
 server/__pycache__/
 **/__pycache__/
 **/*.pyc
@@ -25,3 +25,6 @@ web/node_modules/
 Thumbs.db
 .vscode/settings.json
 .claude/settings.local.json
+
+# Local studio assets and database
+data/

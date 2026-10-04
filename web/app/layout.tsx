@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "VibePod — TTS Podcast Generator",
-  description: "Generate podcast audio using Microsoft VibeVoice 0.5B",
+  description: "Create and save podcast line takes with Qwen3-TTS",
 };
 
 export default function RootLayout({
