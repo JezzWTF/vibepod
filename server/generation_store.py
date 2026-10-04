@@ -67,16 +67,26 @@ def init_db() -> None:
         )
 
 
-def create_job(job_id, text, voice, voice_id, settings_json, episode_id=None, block_id=None):
+def create_job(
+    job_id,
+    text,
+    voice,
+    voice_id,
+    settings_json,
+    episode_id=None,
+    block_id=None,
+    model_id="Qwen3-TTS-12Hz-1.7B-Base",
+):
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json,episode_id,block_id) VALUES (?,?,'queued',?,?,0,?,'Qwen3-TTS-12Hz-1.7B-Base',?,?,?)",
+            "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json,episode_id,block_id) VALUES (?,?,'queued',?,?,0,?,?,?,?,?)",
             (
                 job_id,
                 datetime.now(UTC).isoformat(),
                 text,
                 voice,
                 voice_id,
+                model_id,
                 settings_json,
                 episode_id,
                 block_id,

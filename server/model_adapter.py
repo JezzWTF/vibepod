@@ -104,13 +104,45 @@ class QwenAdapter:
                 raise RuntimeError("Model returned invalid audio")
             return Audio(samples, rate)
 
-    def design(self, text, description):
+    def design(self, text, description, cancel=None):
+        from transformers import StoppingCriteria, StoppingCriteriaList
+
+        class Stop(StoppingCriteria):
+            def __call__(self, input_ids, scores, **kwargs):
+                return bool(cancel and cancel.is_set())
+
         with self.lock:
-            waves, rate = self._load("VoiceDesign").generate_voice_design(
-                text=text,
-                instruct=description,
-                language="English",
-                non_streaming_mode=True,
-                max_new_tokens=1024,
-            )
-            return Audio(np.asarray(waves[0], dtype=np.float32), rate)
+            if cancel and cancel.is_set():
+                raise Cancelled()
+            model = self._load("VoiceDesign")
+            talker = model.model.talker
+            generate = talker.generate
+
+            def cancellable_generate(*args, **kwargs):
+                kwargs["stopping_criteria"] = StoppingCriteriaList([Stop()])
+                result = generate(*args, **kwargs)
+                if cancel and cancel.is_set():
+                    raise Cancelled()
+                if result.sequences.shape[-1] >= kwargs["max_new_tokens"]:
+                    raise RuntimeError(
+                        "Voice preview reached the generation limit. Shorten the preview text."
+                    )
+                return result
+
+            talker.generate = cancellable_generate
+            try:
+                waves, rate = model.generate_voice_design(
+                    text=text,
+                    instruct=description,
+                    language="English",
+                    non_streaming_mode=True,
+                    max_new_tokens=1024,
+                )
+            finally:
+                talker.generate = generate
+            if cancel and cancel.is_set():
+                raise Cancelled()
+            samples = np.asarray(waves[0], dtype=np.float32)
+            if not samples.size or not np.isfinite(samples).all():
+                raise RuntimeError("Model returned invalid voice preview")
+            return Audio(samples, rate)

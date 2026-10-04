@@ -1,9 +1,13 @@
-"""SQLite persistence for script-first episodes and their blocks."""
+"""Durable scripts, immutable take histories, and explicit take selections."""
 
 import uuid
 from datetime import UTC, datetime
 
-from generation_store import DB_PATH, _connect
+import generation_store as store
+
+
+class Conflict(ValueError):
+    pass
 
 
 def _id(prefix):
@@ -11,73 +15,169 @@ def _id(prefix):
 
 
 def init_episodes():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with _connect() as conn:
+    with store._connect() as conn:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS episodes (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
         )
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
+        for name, definition in (
+            ("revision", "INTEGER NOT NULL DEFAULT 1"),
+            ("gap_secs", "REAL NOT NULL DEFAULT 0.25"),
+        ):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE episodes ADD COLUMN {name} {definition}")
         conn.execute(
             "CREATE TABLE IF NOT EXISTS script_blocks (id TEXT PRIMARY KEY, episode_id TEXT NOT NULL REFERENCES episodes(id) ON DELETE CASCADE, position INTEGER NOT NULL, speaker TEXT NOT NULL, voice_id TEXT, text TEXT NOT NULL, selected_take_id TEXT)"
         )
 
 
-def create(title, blocks):
+def _write_blocks(conn, eid, blocks):
+    for position, block in enumerate(blocks):
+        conn.execute(
+            "INSERT INTO script_blocks VALUES (?,?,?,?,?,?,?)",
+            (
+                block.get("id") or _id("block"),
+                eid,
+                position,
+                block["speaker"],
+                block.get("voice_id"),
+                block["text"],
+                block.get("selected_take_id"),
+            ),
+        )
+
+
+def create(title, blocks, gap_secs=0.25):
     eid, now = _id("episode"), datetime.now(UTC).isoformat()
-    with _connect() as conn:
-        conn.execute("INSERT INTO episodes VALUES (?,?,?,?)", (eid, title, now, now))
-        for pos, block in enumerate(blocks):
-            conn.execute(
-                "INSERT INTO script_blocks VALUES (?,?,?,?,?,?,?)",
-                (
-                    _id("block"),
-                    eid,
-                    pos,
-                    block.get("speaker", "Speaker"),
-                    block.get("voice_id"),
-                    block["text"],
-                    None,
-                ),
-            )
+    with store._connect() as conn:
+        conn.execute(
+            "INSERT INTO episodes (id,title,created_at,updated_at,gap_secs) VALUES (?,?,?,?,?)",
+            (eid, title, now, now, gap_secs),
+        )
+        _write_blocks(conn, eid, blocks)
     return get(eid)
 
 
 def get(eid):
-    with _connect() as conn:
+    with store._connect() as conn:
+        # One read transaction keeps the script and take selection consistent.
+        conn.execute("BEGIN")
         episode = conn.execute("SELECT * FROM episodes WHERE id=?", (eid,)).fetchone()
         if not episode:
             return None
         blocks = conn.execute(
             "SELECT * FROM script_blocks WHERE episode_id=? ORDER BY position", (eid,)
         ).fetchall()
+        takes = conn.execute(
+            "SELECT * FROM generations WHERE episode_id=? ORDER BY created_at", (eid,)
+        ).fetchall()
     result = dict(episode)
-    result["blocks"] = [dict(row) for row in blocks]
+    result["blocks"] = []
+    result["cast"] = {}
+    for row in blocks:
+        block = dict(row)
+        block["takes"] = [dict(take) for take in takes if take["block_id"] == block["id"]]
+        selected = next(
+            (take for take in block["takes"] if take["id"] == block["selected_take_id"]), None
+        )
+        block["stale"] = bool(
+            selected
+            and (selected["script"] != block["text"] or selected["voice_id"] != block["voice_id"])
+        )
+        result["blocks"].append(block)
+        result["cast"][block["speaker"]] = block["voice_id"]
     return result
 
 
 def list_all():
-    with _connect() as conn:
-        ids = [row[0] for row in conn.execute("SELECT id FROM episodes ORDER BY updated_at DESC")]
-    return [get(eid) for eid in ids]
+    with store._connect() as conn:
+        rows = conn.execute(
+            "SELECT e.*,COUNT(b.id) AS block_count FROM episodes e LEFT JOIN script_blocks b ON e.id=b.episode_id GROUP BY e.id ORDER BY e.updated_at DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
-def update(eid, title, blocks):
+def update(eid, title, blocks, revision, gap_secs=0.25):
     now = datetime.now(UTC).isoformat()
-    with _connect() as conn:
-        if not conn.execute("SELECT 1 FROM episodes WHERE id=?", (eid,)).fetchone():
+    with store._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        episode = conn.execute("SELECT revision FROM episodes WHERE id=?", (eid,)).fetchone()
+        if not episode:
             return None
-        conn.execute("UPDATE episodes SET title=?,updated_at=? WHERE id=?", (title, now, eid))
-        conn.execute("DELETE FROM script_blocks WHERE episode_id=?", (eid,))
-        for pos, block in enumerate(blocks):
-            conn.execute(
-                "INSERT INTO script_blocks VALUES (?,?,?,?,?,?,?)",
-                (
-                    block.get("id", _id("block")),
-                    eid,
-                    pos,
-                    block.get("speaker", "Speaker"),
-                    block.get("voice_id"),
-                    block["text"],
-                    block.get("selected_take_id"),
-                ),
+        if episode[0] != revision:
+            raise Conflict("Episode changed elsewhere. Reload before saving.")
+        owned = {
+            row[0]: row[1]
+            for row in conn.execute(
+                "SELECT id,selected_take_id FROM script_blocks WHERE episode_id=?", (eid,)
             )
+        }
+        ids = [b.get("id") for b in blocks if b.get("id")]
+        if len(ids) != len(set(ids)) or not set(ids).issubset(owned):
+            raise ValueError("Block IDs must be unique and belong to this episode")
+        for block in blocks:
+            if not block.get("selected_take_id"):
+                block["selected_take_id"] = owned.get(block.get("id"))
+            if block.get("selected_take_id"):
+                take = conn.execute(
+                    "SELECT status FROM generations WHERE id=? AND episode_id=? AND block_id=?",
+                    (block["selected_take_id"], eid, block.get("id")),
+                ).fetchone()
+                if not take or take[0] != "complete":
+                    raise ValueError("Select a completed take belonging to this block")
+        conn.execute(
+            "UPDATE episodes SET title=?,updated_at=?,revision=revision+1,gap_secs=? WHERE id=?",
+            (title, now, gap_secs, eid),
+        )
+        conn.execute("DELETE FROM script_blocks WHERE episode_id=?", (eid,))
+        _write_blocks(conn, eid, blocks)
     return get(eid)
+
+
+def select(eid, bid, tid):
+    with store._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        take = conn.execute(
+            "SELECT status FROM generations WHERE id=? AND episode_id=? AND block_id=?",
+            (tid, eid, bid),
+        ).fetchone()
+        if not take or take[0] != "complete":
+            raise ValueError("Select a completed take belonging to this block")
+        changed = conn.execute(
+            "UPDATE script_blocks SET selected_take_id=? WHERE id=? AND episode_id=?",
+            (tid, bid, eid),
+        ).rowcount
+        if not changed:
+            raise ValueError("Block no longer exists")
+        conn.execute(
+            "UPDATE episodes SET revision=revision+1,updated_at=? WHERE id=?",
+            (datetime.now(UTC).isoformat(), eid),
+        )
+    return get(eid)
+
+
+def select_first_current_take(tid):
+    """Completion may fill an empty selection, but never replace the user's choice."""
+    with store._connect() as conn:
+        take = conn.execute(
+            "SELECT * FROM generations WHERE id=? AND status='complete'", (tid,)
+        ).fetchone()
+        if not take or not take["episode_id"]:
+            return
+        changed = conn.execute(
+            "UPDATE script_blocks SET selected_take_id=? WHERE id=? AND episode_id=? AND selected_take_id IS NULL AND text=? AND voice_id=?",
+            (tid, take["block_id"], take["episode_id"], take["script"], take["voice_id"]),
+        ).rowcount
+        if changed:
+            conn.execute(
+                "UPDATE episodes SET updated_at=? WHERE id=?",
+                (datetime.now(UTC).isoformat(), take["episode_id"]),
+            )
+
+
+def selected_by(tid):
+    with store._connect() as conn:
+        return (
+            conn.execute("SELECT 1 FROM script_blocks WHERE selected_take_id=?", (tid,)).fetchone()
+            is not None
+        )

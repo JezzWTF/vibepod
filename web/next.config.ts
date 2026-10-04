@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Verify a production build without overwriting a running development preview.
+  distDir: process.env.VIBEPOD_CHECK_BUILD === "1" ? ".next-check" : ".next",
 };
 
 export default nextConfig;
