@@ -11,7 +11,7 @@ Verified on GlassBox / RTX 4070, 2026-10-04, using the frozen `server/uv.lock` r
 - Three API tests pass: Phase 1 schema migration and legacy playback; completion/assets; queued and active cancellation/delete race; restart recovery and invalid input.
 - Next.js 15.5.15 production build, Ruff lint/format and Prettier checks pass.
 
-Browser verification is pending: automatic approval review rejected local frontend preview startup with “blocked by policy,” without a specific reason. Approval requested; no claim of visual QA is made. The library route and take proxies compile in the production build, and the real API assets are verified.
+Browser verification is pending: automatic approval review rejected local frontend preview startup with “blocked by policy,” without a specific reason. The user explicitly approved startup, but automatic review still rejected the loopback-bound launch; no claim of visual QA is made. The library route and take proxies compile in the production build, and the real API assets are verified.
 
 No `podcast-forge` directory exists in the repository or parent workspace. The original dirty `feat/studio` checkout remains untouched.
 
