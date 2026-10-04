@@ -1,5 +1,7 @@
 # Python
 server/.venv/
+server/.venv-spike-*/
+server/spike/results/
 server/.venv-cpu/
 server/voices/
 server/__pycache__/
