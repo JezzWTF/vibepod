@@ -1,6 +1,7 @@
 """Durable scripts, immutable take histories, and explicit take selections."""
 
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime
 
 import generation_store as store
@@ -159,9 +160,9 @@ def select(eid, bid, tid, revision):
     return get(eid)
 
 
-def select_first_current_take(tid):
+def select_first_current_take(tid, connection=None):
     """Completion may fill an empty selection, but never replace the user's choice."""
-    with store._connect() as conn:
+    with nullcontext(connection) if connection is not None else store._connect() as conn:
         take = conn.execute(
             "SELECT * FROM generations WHERE id=? AND status='complete'", (tid,)
         ).fetchone()

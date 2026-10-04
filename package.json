@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "desktop": "pnpm --filter vibepod-desktop dev",
+    "desktop:prepare": "node desktop/scripts/prepare.mjs",
+    "desktop:package": "pnpm desktop:prepare && pnpm --filter vibepod-desktop package",
+    "test:desktop": "pnpm --filter vibepod-desktop test",
     "build": "pnpm --filter vibepod-web build",
     "dev": "node scripts/dev.mjs",
     "doctor": "node scripts/dev.mjs --check",

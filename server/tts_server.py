@@ -175,9 +175,13 @@ def render(tid, request, voice, event):
         progress("building_waveform")
         write_peaks(wav, peaks)
         store.complete_job(
-            tid, len(audio.samples) / audio.sample_rate, audio.sample_rate, wav, peaks
+            tid,
+            len(audio.samples) / audio.sample_rate,
+            audio.sample_rate,
+            wav,
+            peaks,
+            on_complete=lambda conn: episodes.select_first_current_take(tid, conn),
         )
-        episodes.select_first_current_take(tid)
     except Cancelled:
         store.cancel_job(tid)
     except Exception as exc:

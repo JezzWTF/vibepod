@@ -16,8 +16,8 @@ Their earlier [maintenance interface](https://blog.comfy.org/p/easy-installation
 - Application updates and inference-runtime updates are distinct. Prepare and validate a new runtime before switching; retain the previous working runtime for recovery. Repair must preserve episodes, voices and generated audio.
 - Development still uses locked setup and one supervised command. A packaged build uses a production frontend, rather than the development server.
 
-## Decisions still needed before implementation
+## Implemented first step
 
-Select the desktop host and packaging strategy; establish runtime artifact production, integrity checks and supported GPU profiles; define safe data migration and rollback boundaries. Electron is a candidate, not a committed framework choice.
+The approved installer and repair interface now runs in an Electron host with a Windows NSIS installer. It bundles the standalone production frontend, uv and audio encoders. It provisions isolated locked Python environments, reports real model-download progress and starts/stops both loopback services. Runtime repair verifies a candidate before switching pointers and preserves model and library folders. See [desktop installation](desktop-installation.md).
 
-Preview the installer, startup and repair UI for user approval before integration. Validate the eventual installer on a clean Windows machine; the current-machine setup smoke test does not substitute for that test. Fresh-install testing is explicitly deferred by the user.
+Prebuilt GPU runtime archives, signed releases, automatic updates, user-facing rollback and data migration remain future work. The installer, startup and repair design was approved before integration. Fresh-install testing is explicitly deferred by the user; current-machine checks do not substitute for a clean Windows test.

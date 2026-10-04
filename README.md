@@ -4,6 +4,8 @@ A local script-first podcast studio for an NVIDIA GPU. Write or import a convers
 
 ## Windows setup
 
+For the Windows desktop installer, first-launch setup and repair behavior, see [desktop installation](docs/desktop-installation.md). The development installer bundles the Studio and manages its separate Python engine without developer terminals.
+
 Install a current NVIDIA driver, Git, and Microsoft App Installer (`winget`). From PowerShell in the repository root:
 
 ```powershell

@@ -260,6 +260,32 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(reopened["blocks"][0]["selected_take_id"], retake["id"])
         self.assertEqual(len(reopened["blocks"][0]["takes"]), 2)
 
+    def test_completion_and_first_selection_commit_or_rollback_together(self):
+        episode = self.episode(count=1)
+        block = episode["blocks"][0]
+        tid = "take_atomic"
+        store.create_job(tid, block["text"], "Host", self.voice, "{}", episode["id"], block["id"])
+        store.start_job(tid)
+
+        def interrupted(conn):
+            server.episodes.select_first_current_take(tid, conn)
+            raise RuntimeError("selection interrupted")
+
+        with self.assertRaisesRegex(RuntimeError, "selection interrupted"):
+            store.complete_job(tid, 1, 24000, "audio.wav", "peaks.json", interrupted)
+        self.assertEqual(store.get_job(tid)["status"], "generating")
+        self.assertIsNone(server.episodes.get(episode["id"])["blocks"][0]["selected_take_id"])
+        store.complete_job(
+            tid,
+            1,
+            24000,
+            "audio.wav",
+            "peaks.json",
+            lambda conn: server.episodes.select_first_current_take(tid, conn),
+        )
+        self.assertEqual(store.get_job(tid)["status"], "complete")
+        self.assertEqual(server.episodes.get(episode["id"])["blocks"][0]["selected_take_id"], tid)
+
     def test_partial_preview_skips_missing_lines_and_preserves_gaps(self):
         FakeAdapter.release.set()
         episode = self.episode(count=3)

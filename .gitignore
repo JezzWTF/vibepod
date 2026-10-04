@@ -30,3 +30,6 @@ Thumbs.db
 data/
 web/.next-check/
 .vibepod/
+desktop/resources/
+desktop/dist/
+web/.next-desktop/

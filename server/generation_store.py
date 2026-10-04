@@ -10,6 +10,7 @@ relationships are added alongside these compatible Phase 1 rows.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 from contextlib import contextmanager
@@ -18,7 +19,7 @@ from pathlib import Path
 
 # Paths relative to the repo root (one level up from this file's directory).
 _REPO_ROOT = Path(__file__).parent.parent
-DATA_DIR = _REPO_ROOT / "data"
+DATA_DIR = Path(os.environ.get("VIBEPOD_DATA_DIR", str(_REPO_ROOT / "data"))).expanduser().resolve()
 DB_PATH = DATA_DIR / "db" / "vibepod.db"
 GENERATIONS_DIR = DATA_DIR / "generations"
 
@@ -119,12 +120,14 @@ def report_progress(job_id, stage, steps=None):
         )
 
 
-def complete_job(job_id, duration, rate, audio, peaks):
+def complete_job(job_id, duration, rate, audio, peaks, on_complete=None):
     with _connect() as conn:
         conn.execute(
             "UPDATE generations SET status='complete',stage='complete',duration_secs=?,sample_rate=?,audio_path=?,waveform_path=? WHERE id=? AND status='generating'",
             (duration, rate, str(audio), str(peaks), job_id),
         )
+        if on_complete:
+            on_complete(conn)
 
 
 def save_completed_job(

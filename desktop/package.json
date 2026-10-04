@@ -1,0 +1,56 @@
+{
+  "name": "vibepod-desktop",
+  "productName": "VibePod",
+  "version": "0.1.0",
+  "description": "VibePod local podcast Studio",
+  "author": "JezzWTF",
+  "private": true,
+  "main": "src/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "package": "node scripts/package.mjs",
+    "package:dir": "node scripts/package.mjs --dir"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "wtf.jezz.vibepod",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**",
+      "ui/**",
+      "assets/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "runtime",
+        "filter": [
+          "bin/**",
+          "server/**",
+          "web/**",
+          "helpers/**",
+          "licenses/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true
+    }
+  }
+}
