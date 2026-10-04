@@ -2,7 +2,9 @@
 
 import io
 import json
+import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -43,6 +45,21 @@ async def lifespan(app):
 app = FastAPI(title="VibePod Studio", lifespan=lifespan)
 
 
+def progress_reporter(tid):
+    last_stage, last_write = None, 0.0
+
+    def report(stage, steps=None):
+        nonlocal last_stage, last_write
+        now = time.monotonic()
+        if stage != last_stage or now - last_write >= 0.5:
+            store.report_progress(tid, stage, steps)
+            if stage != last_stage:
+                logging.getLogger("uvicorn.error").info("Take %s: %s", tid, stage)
+            last_stage, last_write = stage, now
+
+    return report
+
+
 class DesignRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(min_length=10, max_length=1000)
@@ -58,13 +75,16 @@ def render_design(tid, request, event):
         if event.is_set():
             return
         store.start_job(tid)
-        audio = app.state.adapter.design(request.text, request.description, event)
+        progress = progress_reporter(tid)
+        audio = app.state.adapter.design(request.text, request.description, event, progress)
         if event.is_set():
             raise Cancelled()
+        progress("saving_audio")
         directory = store.job_dir(tid)
         directory.mkdir(parents=True, exist_ok=True)
         wav, peaks = directory / "audio.wav", directory / "peaks.json"
         sf.write(wav, audio.samples, audio.sample_rate, subtype="PCM_16")
+        progress("building_waveform")
         write_peaks(wav, peaks)
         store.complete_job(
             tid, len(audio.samples) / audio.sample_rate, audio.sample_rate, wav, peaks
@@ -141,13 +161,18 @@ def render(tid, request, voice, event):
         if event.is_set():
             return
         store.start_job(tid)
-        audio = app.state.adapter.synthesize(request.text, voice, {"seed": request.seed}, event)
+        progress = progress_reporter(tid)
+        audio = app.state.adapter.synthesize(
+            request.text, voice, {"seed": request.seed}, event, progress
+        )
         if event.is_set():
             raise Cancelled()
+        progress("saving_audio")
         directory = store.job_dir(tid)
         directory.mkdir(parents=True, exist_ok=True)
         wav, peaks = directory / "audio.wav", directory / "peaks.json"
         sf.write(wav, audio.samples, audio.sample_rate, subtype="PCM_16")
+        progress("building_waveform")
         write_peaks(wav, peaks)
         store.complete_job(
             tid, len(audio.samples) / audio.sample_rate, audio.sample_rate, wav, peaks
@@ -362,9 +387,41 @@ def cancel_episode(eid: str):
 
 
 @app.get("/episodes/{eid}/audio")
-def episode_audio(eid: str):
+def episode_audio(
+    eid: str,
+    preview: bool = False,
+    selection: str | None = Query(default=None, max_length=16000),
+    gap: float | None = Query(default=None, ge=0, le=5),
+):
     try:
-        path, _ = assemble(get_episode(eid))
+        episode = get_episode(eid)
+        if selection is not None:
+            requested = selection.split(",") if selection else []
+            if len(requested) != len(set(requested)):
+                raise ValueError("Preview selections cannot contain duplicate takes")
+            requested_ids = set(requested)
+            ordered = []
+            blocks = []
+            for block in episode["blocks"]:
+                matches = [
+                    t
+                    for t in block["takes"]
+                    if t["id"] in requested_ids and t["status"] == "complete"
+                ]
+                if len(matches) > 1:
+                    raise ValueError("Choose one completed take per script block")
+                take_id = matches[0]["id"] if matches else None
+                if take_id:
+                    ordered.append(take_id)
+                blocks.append({**block, "selected_take_id": take_id})
+            if ordered != requested:
+                raise ValueError(
+                    "Preview takes must belong to this episode and follow script order"
+                )
+            episode = {**episode, "blocks": blocks}
+        if gap is not None:
+            episode = {**episode, "gap_secs": gap}
+        path, _ = assemble(episode, allow_partial=preview)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return FileResponse(path, media_type="audio/wav")

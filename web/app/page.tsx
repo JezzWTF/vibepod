@@ -25,11 +25,19 @@ export default function StudioPage() {
     ep?.blocks.flatMap((b) => b.takes).filter((t) => ["queued", "generating"].includes(t.status)) ??
     [];
   const missing = ep?.blocks.filter((b) => !b.selected_take_id || b.stale).length ?? 0;
-  const ready =
-    !!ep?.blocks.length &&
-    ep.blocks.every((b) =>
-      b.takes.some((t) => t.id === b.selected_take_id && t.status === "complete")
-    );
+  const playable =
+    ep?.blocks.flatMap((block) => {
+      const take = block.takes.find(
+        (take) => take.id === block.selected_take_id && take.status === "complete"
+      );
+      return take ? [{ block, take }] : [];
+    }) ?? [];
+  let previewCursor = 0;
+  const startOffsets: Record<string, number> = {};
+  for (const { block, take } of playable) {
+    if (block.id) startOffsets[block.id] = previewCursor;
+    previewCursor += (take.duration_secs ?? 0) + (ep?.gap_secs ?? 0);
+  }
   useEffect(() => {
     audio.current?.pause();
     setSelected(0);
@@ -398,23 +406,20 @@ export default function StudioPage() {
         />
       </div>
       <StudioTransport
+        key={ep?.id ?? "empty"}
         title={ep?.title ?? "No episode open"}
-        src={
-          ready && ep
-            ? `/api/episodes/${ep.id}/audio?selection=${encodeURIComponent(ep.blocks.map((b) => b.selected_take_id).join(","))}&gap=${ep.gap_secs}`
-            : null
-        }
-        ready={ready}
+        playlist={{
+          src:
+            playable.length && ep
+              ? `/api/episodes/${ep.id}/audio?preview=true&selection=${encodeURIComponent(playable.map(({ take }) => take.id).join(","))}&gap=${ep.gap_secs}`
+              : null,
+          readyCount: playable.length,
+          totalCount: ep?.blocks.length ?? 0,
+          duration: Math.max(0, previewCursor - (playable.length ? (ep?.gap_secs ?? 0) : 0)),
+          startOffsets,
+        }}
+        selectedBlockId={block?.id ?? null}
         stopSignal={stopSignal}
-        onStart={ep?.blocks
-          .slice(0, selected)
-          .reduce(
-            (sum, b) =>
-              sum +
-              (b.takes.find((t) => t.id === b.selected_take_id)?.duration_secs ?? 0) +
-              ep.gap_secs,
-            0
-          )}
         onPlay={() => {
           audio.current?.pause();
           setAudition(null);

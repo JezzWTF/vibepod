@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "build": "pnpm --filter vibepod-web build",
-    "dev": "bash dev.sh",
+    "dev": "node scripts/dev.mjs",
+    "doctor": "node scripts/dev.mjs --check",
+    "test:launcher": "node --test scripts/tests/*.test.mjs",
     "dev:server": "bash server/start.sh",
     "dev:web": "pnpm --filter vibepod-web dev",
     "format": "prettier --write . && cd server && uv run ruff format .",

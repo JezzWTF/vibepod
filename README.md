@@ -4,36 +4,26 @@ A local script-first podcast studio for an NVIDIA GPU. Write or import a convers
 
 ## Windows setup
 
-Install uv, Node.js, pnpm, and a recent NVIDIA driver. The verified target is RTX 4070 12 GB with Python 3.12.9 and torch/torchaudio 2.8.0 CUDA 12.8. Dependencies are locked in `server/uv.lock`; SDPA is the default attention implementation. Flash attention remains an optional spike experiment, not a runtime dependency.
-
-From the repository root, in separate PowerShell terminals:
+Install a current NVIDIA driver, Git, and Microsoft App Installer (`winget`). From PowerShell in the repository root:
 
 ```powershell
-pnpm install --frozen-lockfile
-./server/start.ps1
-pnpm dev:web
+./setup.ps1 -InstallTools
+pnpm dev
 ```
+
+Setup installs the required tools, locked dependencies and pinned model checkpoints, then checks CUDA and audio encoders. The verified target is RTX 4070 12 GB with Python 3.12.9 and torch/torchaudio 2.8.0 CUDA 12.8. SDPA is the default; Flash Attention is optional. Ordinary startup installs nothing, manages both services, and hides routine request logs. Ctrl+C stops both owned service trees. Use `pnpm run doctor` for installation checks.
+
+See [Windows setup and development](docs/windows-development.md) for prerequisites, custom paths/ports, interrupted downloads and troubleshooting. Setup/start have been tested on the current Windows machine; a clean Windows installation test is deferred.
 
 Open http://localhost:3000. Create an episode and paste a script as `Speaker: line`, one block per line, or write blocks directly. Add a voice by uploading a clean 3–30 second WAV, or describe a voice, audition its designed preview and save it. Assign the saved voices to the cast and generate the episode. The first generation loads/downloads the pinned public checkpoint and can take several minutes; models run locally thereafter. An optional reference transcript enables transcript-assisted cloning.
 
-Each regeneration adds an immutable take. Audition alternatives in the inspector and select the one to use. Text or voice changes mark earlier selections stale; Generate missing includes stale blocks. Autosave retains the script, cast, gaps and selection. The transport plays the selected takes in order or starts from the selected block. Library reopens episodes and keeps standalone audio accessible.
+Each regeneration adds an immutable take. Audition alternatives in the inspector and select the one to use. Text or voice changes mark earlier selections stale; Generate missing includes stale blocks. Autosave retains the script, cast, gaps and selection. The transport previews ready selected takes in script order, keeping the gaps between them and reporting how many unfinished lines are skipped. Start from any ready selected block without exporting or waiting for the whole episode. Finishing more takes does not interrupt a playing preview; pause or finish playback to refresh it. Library reopens episodes and keeps standalone audio accessible.
 
 Install FFmpeg on PATH for export. Choose MP3 (192 kbps) or WAV (24-bit/48 kHz), add title/show/episode metadata and optional square JPG/PNG cover art for MP3. Background exports capture the selected takes and gaps when started, normalize mono speech to −19 LUFS, and verify encoded loudness within ±1 LU and true peak below −1 dB before exposing a download. Finished exports remain listed against the episode after reopening. A restart explicitly fails unfinished work; completed files remain available.
 
-The Windows launcher places the environment under `%LOCALAPPDATA%/VibePod/venv`, saving workspace disk space. Override with `VIBEPOD_VENV`. For Git Bash, `pnpm dev` runs both services and uses `server/.venv` unless overridden. CPU mode is unsupported.
+Python environments live outside the checkout under `%LOCALAPPDATA%/VibePod/environments`, with a separate identifier for each checkout. Models and cache are shared under `%LOCALAPPDATA%/VibePod`. Set `VIBEPOD_VENV`, `VIBEPOD_MODEL_PATH`, `VIBEPOD_DESIGN_MODEL_PATH` or `HF_HOME` before setup to customize paths. Setup preserves saved paths and ports on reruns; explicit environment overrides take precedence. Configuration lives in ignored `.vibepod/config.json`. CPU mode is unsupported.
 
-Optional environment variables (set in the shell before starting):
-
-```powershell
-$env:VIBEPOD_MODEL_PATH = 'C:/models/qwen-base'
-$env:VIBEPOD_DESIGN_MODEL_PATH = 'C:/models/qwen-design'
-$env:VIBEPOD_VENV = 'C:/venvs/vibepod'
-$env:VIBEPOD_PORT = '8000'
-```
-
-For a prefetch resilient to interrupted downloads, run `uv run spike/download.py Qwen/Qwen3-TTS-12Hz-1.7B-Base C:/models/qwen-base` from `server`. `HF_HOME` selects the Hugging Face cache. The public models need no login.
-
-Set `VIBEPOD_SERVER_URL` in `web/.env.local` if changing the backend address. The server binds to loopback. Keep the frontend local too; it has no authentication and is intended for a trusted local user.
+Both services bind to loopback. The launcher supplies Next with the configured Python address. Keep the frontend local; it has no authentication and is intended for a trusted local user.
 
 ## Data and API
 
@@ -56,10 +46,13 @@ To verify a production build while a development preview is running, set `$env:V
 
 ```powershell
 pnpm build
-pnpm format:check
+pnpm test:launcher
+pnpm exec prettier --check .
+$config = Get-Content .vibepod/config.json -Raw | ConvertFrom-Json
 cd server
-uv run ruff check .
-uv run python -m unittest discover -s tests
+& $config.python -m ruff check .
+& $config.python -m ruff format --check .
+& $config.python -m unittest discover -s tests
 ```
 
 See [the model evidence](docs/model-spike.md) and [the build plan](docs/studio-build-plan.md).

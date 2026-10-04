@@ -1,29 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
 import type { ScriptBlock } from "@/lib/types/episode";
-import type { WaveformPeaks } from "@/lib/types/generation";
-import WaveformPreview from "./WaveformPreview";
-
-function TakeWaveform({ id }: { id: string }) {
-  const [peaks, setPeaks] = useState<WaveformPeaks | null>(null);
-  useEffect(() => {
-    let active = true;
-    fetch(`/api/takes/${id}/waveform`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((v) => {
-        if (active) setPeaks(v);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [id]);
-  return peaks ? (
-    <WaveformPreview peaks={peaks} height={32} color="#aed5bf" />
-  ) : (
-    <div className="waveform-loading" aria-label="Loading waveform" />
-  );
-}
+import TakeSignal from "./TakeSignal";
 export default function TakeInspector({
   block,
   index,
@@ -70,7 +47,9 @@ export default function TakeInspector({
                   Voice: {take.speaker}
                   {take.voice_id !== block.voice_id ? " · previous assignment" : ""}
                 </p>
-                {take.status === "complete" && <TakeWaveform id={take.id} />}
+                {["queued", "generating", "complete"].includes(take.status) && (
+                  <TakeSignal id={take.id} status={take.status} />
+                )}
                 {take.error_message && <p className="studio-error">{take.error_message}</p>}
                 <div className="take-actions">
                   <button disabled={take.status !== "complete"} onClick={() => onAudition(take.id)}>

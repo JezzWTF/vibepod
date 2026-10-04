@@ -19,6 +19,20 @@ class Cancelled(Exception):
     pass
 
 
+def runtime_info():
+    import torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is unavailable. Install/update the NVIDIA driver and rerun setup.")
+    properties = torch.cuda.get_device_properties(0)
+    return {
+        "name": properties.name,
+        "vram_gb": properties.total_memory / 2**30,
+        "torch": torch.__version__,
+        "cuda": torch.version.cuda,
+    }
+
+
 class QwenAdapter:
     def __init__(self):
         os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
@@ -30,11 +44,13 @@ class QwenAdapter:
         self.variant = None
         self.lock = threading.Lock()
 
-    def _load(self, variant):
+    def _load(self, variant, progress=None):
         import torch
         from qwen_tts import Qwen3TTSModel
 
         if self.variant != variant:
+            if progress:
+                progress("loading_model")
             self.model = None
             self.variant = None
             gc.collect()
@@ -57,18 +73,25 @@ class QwenAdapter:
             self.variant = variant
         return self.model
 
-    def synthesize(self, text, voice, settings, cancel=None):
+    def synthesize(self, text, voice, settings, cancel=None, progress=None):
         import torch
         from transformers import StoppingCriteria, StoppingCriteriaList
 
         class Stop(StoppingCriteria):
+            steps = 0
+
             def __call__(self, input_ids, scores, **kwargs):
+                self.steps += 1
+                if progress:
+                    progress("synthesizing", self.steps)
                 return bool(cancel and cancel.is_set())
 
         with self.lock:
             if cancel and cancel.is_set():
                 raise Cancelled()
-            model = self._load("Base")
+            model = self._load("Base", progress)
+            if progress:
+                progress("preparing_voice")
             torch.manual_seed(settings.get("seed", 42))
             # Qwen 0.1.1 drops arbitrary kwargs before talker.generate. Attach
             # cancellation here, only for the duration of this serialized call.
@@ -76,6 +99,8 @@ class QwenAdapter:
             generate = talker.generate
 
             def cancellable_generate(*args, **kwargs):
+                if progress:
+                    progress("synthesizing", 0)
                 kwargs["stopping_criteria"] = StoppingCriteriaList([Stop()])
                 result = generate(*args, **kwargs)
                 if cancel and cancel.is_set():
@@ -104,21 +129,28 @@ class QwenAdapter:
                 raise RuntimeError("Model returned invalid audio")
             return Audio(samples, rate)
 
-    def design(self, text, description, cancel=None):
+    def design(self, text, description, cancel=None, progress=None):
         from transformers import StoppingCriteria, StoppingCriteriaList
 
         class Stop(StoppingCriteria):
+            steps = 0
+
             def __call__(self, input_ids, scores, **kwargs):
+                self.steps += 1
+                if progress:
+                    progress("synthesizing", self.steps)
                 return bool(cancel and cancel.is_set())
 
         with self.lock:
             if cancel and cancel.is_set():
                 raise Cancelled()
-            model = self._load("VoiceDesign")
+            model = self._load("VoiceDesign", progress)
             talker = model.model.talker
             generate = talker.generate
 
             def cancellable_generate(*args, **kwargs):
+                if progress:
+                    progress("synthesizing", 0)
                 kwargs["stopping_criteria"] = StoppingCriteriaList([Stop()])
                 result = generate(*args, **kwargs)
                 if cancel and cancel.is_set():

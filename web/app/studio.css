@@ -566,6 +566,11 @@
   background: #2e333b;
   border-radius: 3px;
 }
+.take-signal {
+  display: block;
+  width: 100%;
+  height: 96px;
+}
 .studio-transport {
   height: var(--studio-transport-height);
   position: fixed;

@@ -63,8 +63,16 @@ def init_db() -> None:
         for name in ("voice_id", "model_id", "settings_json", "episode_id", "block_id"):
             if name not in columns:
                 conn.execute(f"ALTER TABLE generations ADD COLUMN {name} TEXT")
+        for name, definition in (
+            ("stage", "TEXT"),
+            ("started_at", "TEXT"),
+            ("progress_at", "TEXT"),
+            ("decoder_steps", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE generations ADD COLUMN {name} {definition}")
         conn.execute(
-            "UPDATE generations SET status='error', error_message='Interrupted by server restart' WHERE status IN ('queued', 'generating')"
+            "UPDATE generations SET status='error',stage='interrupted', error_message='Interrupted by server restart' WHERE status IN ('queued', 'generating')"
         )
 
 
@@ -98,14 +106,23 @@ def create_job(
 def start_job(job_id):
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status='generating' WHERE id=? AND status='queued'", (job_id,)
+            "UPDATE generations SET status='generating',stage='preparing',started_at=?,progress_at=? WHERE id=? AND status='queued'",
+            (datetime.now(UTC).isoformat(), datetime.now(UTC).isoformat(), job_id),
+        )
+
+
+def report_progress(job_id, stage, steps=None):
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE generations SET stage=?,decoder_steps=COALESCE(?,decoder_steps),progress_at=? WHERE id=? AND status='generating'",
+            (stage, steps, datetime.now(UTC).isoformat(), job_id),
         )
 
 
 def complete_job(job_id, duration, rate, audio, peaks):
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status='complete',duration_secs=?,sample_rate=?,audio_path=?,waveform_path=? WHERE id=? AND status='generating'",
+            "UPDATE generations SET status='complete',stage='complete',duration_secs=?,sample_rate=?,audio_path=?,waveform_path=? WHERE id=? AND status='generating'",
             (duration, rate, str(audio), str(peaks), job_id),
         )
 
@@ -149,7 +166,7 @@ def save_completed_job(
 def cancel_job(job_id: str) -> None:
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status = 'cancelled' WHERE id = ? AND status IN ('queued','generating')",
+            "UPDATE generations SET status = 'cancelled',stage='cancelled' WHERE id = ? AND status IN ('queued','generating')",
             (job_id,),
         )
 
@@ -157,7 +174,7 @@ def cancel_job(job_id: str) -> None:
 def fail_job(job_id: str, error_message: str) -> None:
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status = 'error', error_message = ? WHERE id = ? AND status IN ('queued','generating')",
+            "UPDATE generations SET status = 'error',stage='error', error_message = ? WHERE id = ? AND status IN ('queued','generating')",
             (error_message[:2000], job_id),
         )
 

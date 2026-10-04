@@ -17,11 +17,12 @@ def sha256(path):
 parser = argparse.ArgumentParser()
 parser.add_argument("repo")
 parser.add_argument("destination", type=Path)
+parser.add_argument("--revision", help="Exact checkpoint revision to verify and download")
 parser.add_argument(
     "--cache", type=Path, help="Reuse completed or partial files from this spike's Hub cache"
 )
 args = parser.parse_args()
-info = HfApi(token=False).model_info(args.repo, files_metadata=True)
+info = HfApi(token=False).model_info(args.repo, revision=args.revision, files_metadata=True)
 args.destination.mkdir(parents=True, exist_ok=True)
 for entry in info.siblings:
     if not entry.rfilename.endswith((".json", ".txt", ".safetensors", ".model")):

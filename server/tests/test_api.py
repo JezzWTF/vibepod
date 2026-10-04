@@ -28,14 +28,20 @@ class FakeAdapter:
     entered = threading.Event()
     release = threading.Event()
 
-    def design(self, text, description, cancel):
+    def design(self, text, description, cancel, progress=None):
+        if progress:
+            progress("loading_model")
+            progress("synthesizing", 12)
         self.entered.set()
         self.release.wait(3)
         if cancel.is_set():
             raise Cancelled()
         return Audio(np.sin(np.arange(96000) * 0.03).astype(np.float32) * 0.1, 24000)
 
-    def synthesize(self, text, voice, settings, cancel):
+    def synthesize(self, text, voice, settings, cancel, progress=None):
+        if progress:
+            progress("loading_model")
+            progress("synthesizing", 12)
         self.entered.set()
         self.release.wait(3)
         if cancel.is_set():
@@ -87,12 +93,13 @@ class ApiTest(unittest.TestCase):
         return response.json()["id"]
 
     def wait(self, tid, status):
-        for _ in range(100):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
             row = self.client.get(f"/takes/{tid}").json()
             if row["status"] == status:
                 return row
             time.sleep(0.02)
-        self.fail(f"Take did not become {status}")
+        self.fail(f"Take did not become {status}: {row}")
 
     def test_complete_assets_and_legacy_record(self):
         FakeAdapter.release.set()
@@ -130,6 +137,8 @@ class ApiTest(unittest.TestCase):
                 break
             time.sleep(0.02)
         self.assertEqual(store.get_job(tid)["status"], "cancelled")
+        store.report_progress(tid, "synthesizing", 999)
+        self.assertEqual(store.get_job(tid)["stage"], "cancelled")
         self.assertIsNone(store.get_job(tid)["audio_path"])
         self.assertEqual(store.get_job(queued)["status"], "cancelled")
         self.assertEqual(self.client.delete(f"/takes/{tid}").status_code, 200)
@@ -138,6 +147,7 @@ class ApiTest(unittest.TestCase):
         store.create_job("take_interrupted", "Hello", "Host", self.voice, "{}")
         store.init_db()
         self.assertEqual(store.get_job("take_interrupted")["status"], "error")
+        self.assertEqual(store.get_job("take_interrupted")["stage"], "interrupted")
         self.assertEqual(
             self.client.post("/takes", json={"text": " ", "voice_id": self.voice}).status_code, 422
         )
@@ -153,6 +163,22 @@ class ApiTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             store.job_dir("../outside")
+
+    def test_live_progress_and_terminal_state(self):
+        tid = self.create()
+        self.assertTrue(FakeAdapter.entered.wait(5), self.client.get(f"/takes/{tid}").json())
+        active = self.client.get(f"/takes/{tid}").json()
+        self.assertEqual(active["status"], "generating")
+        self.assertEqual(active["stage"], "synthesizing")
+        self.assertEqual(active["decoder_steps"], 12)
+        self.assertIsNotNone(active["started_at"])
+        self.assertIsNotNone(active["progress_at"])
+        FakeAdapter.release.set()
+        finished = self.wait(tid, "complete")
+        self.assertEqual(finished["stage"], "complete")
+        store.report_progress(tid, "synthesizing", 999)
+        self.assertEqual(store.get_job(tid)["stage"], "complete")
+        self.assertEqual(store.get_job(tid)["decoder_steps"], 12)
 
     def episode(self, count=2):
         response = self.client.post(
@@ -233,6 +259,47 @@ class ApiTest(unittest.TestCase):
         reopened = self.client.get(f"/episodes/{eid}").json()
         self.assertEqual(reopened["blocks"][0]["selected_take_id"], retake["id"])
         self.assertEqual(len(reopened["blocks"][0]["takes"]), 2)
+
+    def test_partial_preview_skips_missing_lines_and_preserves_gaps(self):
+        FakeAdapter.release.set()
+        episode = self.episode(count=3)
+        eid = episode["id"]
+        self.assertEqual(self.client.get(f"/episodes/{eid}/audio?preview=true").status_code, 409)
+        for index in (0, 2):
+            bid = episode["blocks"][index]["id"]
+            tid = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+            self.wait(tid, "complete")
+        # Full playback/export assembly still requires every line.
+        self.assertEqual(self.client.get(f"/episodes/{eid}/audio").status_code, 409)
+        response = self.client.get(f"/episodes/{eid}/audio?preview=true")
+        self.assertEqual(response.status_code, 200)
+        samples, rate = sf.read(io.BytesIO(response.content))
+        self.assertEqual(rate, 24000)
+        self.assertEqual(len(samples), 54000)
+        self.assertTrue(np.all(samples[24000:30000] == 0))
+        current = self.client.get(f"/episodes/{eid}").json()
+        _, segments = server.assemble(current, allow_partial=True)
+        self.assertEqual(
+            [s["block_id"] for s in segments], [episode["blocks"][i]["id"] for i in (0, 2)]
+        )
+        self.assertEqual([s["start_secs"] for s in segments], [0, 1.25])
+        self.assertIsNone(current["blocks"][1]["selected_take_id"])
+        ids = [current["blocks"][i]["selected_take_id"] for i in (0, 2)]
+        # A preview URL captures its takes and gap even as more lines become ready.
+        snapshot = self.client.get(f"/episodes/{eid}/audio?preview=true&selection={ids[0]}")
+        self.assertEqual(len(sf.read(io.BytesIO(snapshot.content))[0]), 24000)
+        changed_gap = self.client.get(
+            f"/episodes/{eid}/audio?preview=true&selection={','.join(ids)}&gap=0.5"
+        )
+        self.assertEqual(len(sf.read(io.BytesIO(changed_gap.content))[0]), 60000)
+        for invalid in ("take_missing", f"{ids[0]},{ids[0]}", f"{ids[1]},{ids[0]}"):
+            self.assertEqual(
+                self.client.get(
+                    f"/episodes/{eid}/audio?preview=true&selection={invalid}"
+                ).status_code,
+                409,
+            )
+        self.assertEqual(self.client.get(f"/episodes/{eid}").json(), current)
 
     def test_selection_cannot_race_take_deletion(self):
         FakeAdapter.release.set()

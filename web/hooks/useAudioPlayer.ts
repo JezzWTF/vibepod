@@ -31,7 +31,10 @@ export function useAudioPlayer(audioUrl: string | null) {
       return;
     }
 
-    const audio = new Audio(audioUrl);
+    // Assemble an episode preview only when the user starts playback.
+    const audio = new Audio();
+    audio.preload = "none";
+    audio.src = audioUrl;
     audioRef.current = audio;
     setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0, duration: 0, error: "" }));
     audio.volume = state.volume;
@@ -64,6 +67,9 @@ export function useAudioPlayer(audioUrl: string | null) {
       () => setState((prev) => ({ ...prev, duration: audio.duration })),
       { signal }
     );
+    audio.addEventListener("canplay", () => setState((prev) => ({ ...prev, error: "" })), {
+      signal,
+    });
     audio.addEventListener(
       "ended",
       () => setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 })),
@@ -87,11 +93,12 @@ export function useAudioPlayer(audioUrl: string | null) {
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
-      audio
-        .play()
-        .catch(() =>
-          setState((prev) => ({ ...prev, error: "Playback could not start. Try again." }))
-        );
+      setState((prev) => ({ ...prev, error: "" }));
+      if (audio.error) audio.load();
+      audio.play().catch((error) => {
+        if (audioRef.current === audio && error.name !== "AbortError")
+          setState((prev) => ({ ...prev, error: "Playback could not start. Try again." }));
+      });
     } else {
       audio.pause();
     }
@@ -104,6 +111,7 @@ export function useAudioPlayer(audioUrl: string | null) {
       0,
       Math.min(time, Number.isFinite(audio.duration) ? audio.duration : time)
     );
+    setState((prev) => ({ ...prev, currentTime: audio.currentTime }));
   }, []);
 
   const pause = useCallback(() => audioRef.current?.pause(), []);
@@ -113,15 +121,19 @@ export function useAudioPlayer(audioUrl: string | null) {
     if (!audio) return;
     const start = () => {
       if (audioRef.current !== audio) return;
+      setState((prev) => ({ ...prev, error: "" }));
       audio.currentTime = time;
-      audio
-        .play()
-        .catch(() =>
-          setState((prev) => ({ ...prev, error: "Playback could not start. Try again." }))
-        );
+      audio.play().catch((error) => {
+        if (audioRef.current === audio && error.name !== "AbortError")
+          setState((prev) => ({ ...prev, error: "Playback could not start. Try again." }));
+      });
     };
     if (audio.readyState >= 1) start();
-    else audio.addEventListener("loadedmetadata", start, { once: true });
+    else {
+      audio.addEventListener("loadedmetadata", start, { once: true });
+      audio.preload = "auto";
+      audio.load();
+    }
   }, []);
 
   const setVolume = useCallback((v: number) => {
