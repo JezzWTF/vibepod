@@ -255,7 +255,10 @@ export function useStudio() {
     return action(async () => {
       if (draft.current)
         install(
-          await api(`episodes/${draft.current.id}/blocks/${bid}/select`, "POST", { take_id: tid })
+          await api(`episodes/${draft.current.id}/blocks/${bid}/select`, "POST", {
+            take_id: tid,
+            revision: draft.current.revision,
+          })
         );
     });
   }

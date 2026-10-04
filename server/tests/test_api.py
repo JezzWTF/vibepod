@@ -9,6 +9,8 @@ import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -187,14 +189,30 @@ class ApiTest(unittest.TestCase):
         foreign = ep["blocks"][1]["selected_take_id"]
         self.assertEqual(
             self.client.post(
-                f"/episodes/{eid}/blocks/{first['id']}/select", json={"take_id": foreign}
+                f"/episodes/{eid}/blocks/{first['id']}/select",
+                json={"take_id": foreign, "revision": ep["revision"]},
             ).status_code,
             422,
         )
+        stale_revision = ep["revision"]
         ep = self.client.post(
-            f"/episodes/{eid}/blocks/{first['id']}/select", json={"take_id": retake["id"]}
+            f"/episodes/{eid}/blocks/{first['id']}/select",
+            json={"take_id": retake["id"], "revision": ep["revision"]},
         ).json()
+        # A second tab with no unsaved edits must not overwrite this selection.
+        self.assertEqual(
+            self.client.post(
+                f"/episodes/{eid}/blocks/{first['id']}/select",
+                json={"take_id": original, "revision": stale_revision},
+            ).status_code,
+            409,
+        )
+        self.assertEqual(
+            self.client.get(f"/episodes/{eid}").json()["blocks"][0]["selected_take_id"],
+            retake["id"],
+        )
         self.assertEqual(self.client.delete(f"/takes/{retake['id']}").status_code, 409)
+        self.assertTrue(store.job_dir(retake["id"]).exists())
         audio = self.client.get(f"/episodes/{eid}/audio")
         self.assertEqual(audio.status_code, 200)
         samples, rate = sf.read(io.BytesIO(audio.content))
@@ -215,6 +233,56 @@ class ApiTest(unittest.TestCase):
         reopened = self.client.get(f"/episodes/{eid}").json()
         self.assertEqual(reopened["blocks"][0]["selected_take_id"], retake["id"])
         self.assertEqual(len(reopened["blocks"][0]["takes"]), 2)
+
+    def test_selection_cannot_race_take_deletion(self):
+        FakeAdapter.release.set()
+        ep = self.episode(count=1)
+        eid, bid = ep["id"], ep["blocks"][0]["id"]
+        original = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        self.wait(original, "complete")
+        tid = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        self.wait(tid, "complete")
+        ep = self.client.get(f"/episodes/{eid}").json()
+        deleting, release, selecting = threading.Event(), threading.Event(), threading.Event()
+        connect = store._connect
+
+        @contextmanager
+        def paused_connect():
+            with connect() as conn:
+
+                def trace(sql):
+                    if sql.startswith("DELETE FROM generations"):
+                        deleting.set()
+                        release.wait(3)
+
+                conn.set_trace_callback(trace)
+                yield conn
+
+        def select():
+            selecting.set()
+            return self.client.post(
+                f"/episodes/{eid}/blocks/{bid}/select",
+                json={"take_id": tid, "revision": ep["revision"]},
+            )
+
+        with patch.object(store, "_connect", paused_connect), ThreadPoolExecutor(2) as pool:
+            deletion = pool.submit(self.client.delete, f"/takes/{tid}")
+            try:
+                self.assertTrue(deleting.wait(2))
+                self.assertTrue(store.job_dir(tid).exists())
+                selection = pool.submit(select)
+                self.assertTrue(selecting.wait(2))
+                # The delete transaction still owns the write lock.
+                self.assertFalse(selection.done())
+            finally:
+                release.set()
+            self.assertEqual(deletion.result(timeout=3).status_code, 200)
+            self.assertEqual(selection.result(timeout=3).status_code, 422)
+        self.assertFalse(store.job_dir(tid).exists())
+        self.assertEqual(
+            self.client.get(f"/episodes/{eid}").json()["blocks"][0]["selected_take_id"],
+            original,
+        )
 
     def test_episode_generation_validation_and_cancellation(self):
         ep = self.episode()

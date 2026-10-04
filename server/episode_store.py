@@ -134,9 +134,12 @@ def update(eid, title, blocks, revision, gap_secs=0.25):
     return get(eid)
 
 
-def select(eid, bid, tid):
+def select(eid, bid, tid, revision):
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        episode = conn.execute("SELECT revision FROM episodes WHERE id=?", (eid,)).fetchone()
+        if not episode or episode[0] != revision:
+            raise Conflict("Episode changed elsewhere. Reload before selecting a take.")
         take = conn.execute(
             "SELECT status FROM generations WHERE id=? AND episode_id=? AND block_id=?",
             (tid, eid, bid),

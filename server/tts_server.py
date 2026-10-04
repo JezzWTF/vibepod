@@ -296,13 +296,16 @@ def update_episode(eid: str, request: EpisodeRequest):
 
 class SelectionRequest(BaseModel):
     take_id: str
+    revision: int
 
 
 @app.post("/episodes/{eid}/blocks/{bid}/select")
 def select_take(eid: str, bid: str, request: SelectionRequest):
     get_episode(eid)
     try:
-        return episodes.select(eid, bid, request.take_id)
+        return episodes.select(eid, bid, request.take_id, request.revision)
+    except episodes.Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -472,14 +475,13 @@ def cancel_take(tid: str):
 @app.delete("/takes/{tid}")
 def delete_take(tid: str):
     require_take(tid)
-    if episodes.selected_by(tid):
-        raise HTTPException(409, "Select another take in the episode before deleting this one")
-    if exports.uses_pending_take(tid):
-        raise HTTPException(409, "Wait for the episode export to finish before deleting this take")
     with app.state.lock:
         if tid in app.state.pending:
             raise HTTPException(409, "Wait for the take to finish cancelling before deleting it")
-        store.delete_job(tid)
+        try:
+            store.delete_job(tid)
+        except store.TakeInUse as exc:
+            raise HTTPException(409, str(exc)) from exc
     return {"deleted": tid}
 
 
