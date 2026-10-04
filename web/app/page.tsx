@@ -1,190 +1,436 @@
 "use client";
-import { useEffect, useState } from "react";
-import Header from "@/components/Header";
-import AudioPlayer from "@/components/AudioPlayer";
-import type { GenerationJob } from "@/lib/types/generation";
-type Voice = { id: string; name: string };
-async function json(r: Response) {
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.detail ?? d.error ?? "Request failed");
-  return d;
-}
-export default function Page() {
-  const [voices, setVoices] = useState<Voice[]>([]),
-    [voice, setVoice] = useState(""),
-    [text, setText] = useState("");
-  const [take, setTake] = useState<GenerationJob | null>(null),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const active = take?.status === "queued" || take?.status === "generating";
-  useEffect(() => {
-    fetch("/api/voices")
-      .then(json)
-      .then(setVoices)
-      .catch((e) => setError(e.message));
-  }, []);
-  useEffect(() => {
-    if (!active || !take) return;
-    const timer = setInterval(
-      () =>
-        fetch(`/api/takes/${take.id}`)
-          .then(json)
-          .then(setTake)
-          .catch((e) => setError(e.message)),
-      1500
+import { useEffect, useRef, useState } from "react";
+import { useStudio } from "@/hooks/useStudio";
+import TakeInspector from "@/components/TakeInspector";
+import StudioTransport from "@/components/StudioTransport";
+import VoiceDialog from "@/components/VoiceDialog";
+import ExportDialog from "@/components/ExportDialog";
+import "./studio.css";
+
+export default function StudioPage() {
+  const studio = useStudio();
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [stopSignal, setStopSignal] = useState(0);
+  const [selected, setSelected] = useState(0),
+    [importing, setImporting] = useState(false),
+    [script, setScript] = useState("");
+  const [audition, setAudition] = useState<string | null>(null),
+    [mediaError, setMediaError] = useState("");
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const ep = studio.episode;
+  const block = ep?.blocks[selected];
+  const cast = Array.from(new Set(ep?.blocks.map((b) => b.speaker) ?? []));
+  const active =
+    ep?.blocks.flatMap((b) => b.takes).filter((t) => ["queued", "generating"].includes(t.status)) ??
+    [];
+  const missing = ep?.blocks.filter((b) => !b.selected_take_id || b.stale).length ?? 0;
+  const ready =
+    !!ep?.blocks.length &&
+    ep.blocks.every((b) =>
+      b.takes.some((t) => t.id === b.selected_take_id && t.status === "complete")
     );
-    return () => clearInterval(timer);
-  }, [active, take]);
-  async function clone(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    setBusy(true);
-    setError("");
-    try {
-      const created = await json(
-        await fetch("/api/voices", { method: "POST", body: new FormData(form) })
-      );
-      setVoices((v) => [...v, created]);
-      setVoice(created.id);
-      form.reset();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    audio.current?.pause();
+    setSelected(0);
+    setAudition(null);
+  }, [ep?.id]);
+  useEffect(
+    () => () => {
+      audio.current?.pause();
+    },
+    []
+  );
+  function play(id: string) {
+    setStopSignal((value) => value + 1);
+    audio.current?.pause();
+    if (audition === id) {
+      setAudition(null);
+      return;
     }
-  }
-  async function generate() {
-    setBusy(true);
-    setError("");
-    try {
-      setTake(
-        await json(
-          await fetch("/api/takes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text, voice_id: voice }),
-          })
-        )
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    const player = new Audio(`/api/takes/${id}/audio`);
+    audio.current = player;
+    player.onended = () => setAudition(null);
+    setMediaError("");
+    player
+      .play()
+      .then(() => setAudition(id))
+      .catch(() => setMediaError("This take could not be played. Try again."));
   }
   return (
-    <>
-      <Header />
-      <main className="max-w-3xl mx-auto p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-semibold">Create a line take</h1>
-          <p className="mt-2 text-sm">
-            Choose a voice, write a line, and keep its audio in your library.
-          </p>
+    <div className="studio-app">
+      <a href="#script" className="studio-skip">
+        Skip to script
+      </a>
+      <header className="studio-topbar">
+        <div className="studio-brand">
+          <span className="studio-mark">▥</span>
+          <strong>VibePod</strong>
+          <span>Studio</span>
         </div>
-        <form
-          onSubmit={clone}
-          className="rounded-xl border p-5 space-y-3"
-          style={{ borderColor: "var(--border)" }}
+        <div className="studio-breadcrumb">
+          Episodes <span>/</span> {ep?.title ?? "Workspace"}
+        </div>
+        <span className="studio-save" role="status">
+          {studio.status}
+        </span>
+        <button
+          className="studio-primary"
+          disabled={!ep || studio.busy}
+          onClick={() => setExportOpen(true)}
         >
-          <h2 className="font-semibold">Add a cloned voice</h2>
-          <p className="text-sm">Upload 3–30 seconds of clean speech as a WAV.</p>
-          <label className="block">
-            Voice name
-            <input
-              name="name"
-              required
-              maxLength={80}
-              className="block w-full border rounded p-2 mt-1"
-            />
-          </label>
-          <label className="block">
-            Reference WAV
-            <input
-              name="file"
-              type="file"
-              accept=".wav,audio/wav"
-              required
-              className="block mt-1"
-            />
-          </label>
-          <label className="block">
-            Transcript (optional)
-            <input
-              name="transcript"
-              maxLength={4000}
-              className="block w-full border rounded p-2 mt-1"
-            />
-          </label>
-          <button disabled={busy} className="border rounded px-4 py-2 disabled:opacity-40">
-            Save voice
-          </button>
-        </form>
-        <section className="space-y-4">
-          <label className="block">
-            Voice
-            <select
-              value={voice}
-              onChange={(e) => setVoice(e.target.value)}
-              className="block w-full border rounded p-2 mt-1"
-            >
-              <option value="">Choose a saved voice</option>
-              {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            Line
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={4000}
-              rows={5}
-              className="block w-full border rounded p-3 mt-1"
-            />
-          </label>
-          <button
-            disabled={busy || active || !voice || !text.trim()}
-            onClick={generate}
-            className="border rounded px-5 py-2 disabled:opacity-40"
+          Export
+        </button>
+        <button className="studio-secondary" disabled={studio.busy} onClick={() => studio.create()}>
+          New episode
+        </button>
+      </header>
+      <div className="studio-workspace">
+        <nav className="studio-navigation" aria-label="Episode workspace">
+          <p className="studio-eyebrow">Workspace</p>
+          <span className="workspace-tab">
+            Episodes <span>{studio.recent.length.toString().padStart(2, "0")}</span>
+          </span>
+          <a
+            className="studio-archive"
+            href="/library"
+            onClick={async (e) => {
+              e.preventDefault();
+              try {
+                await studio.save();
+                window.location.assign("/library");
+              } catch {}
+            }}
           >
-            {active ? "Generating…" : "Generate take"}
+            Saved audio library →
+          </a>
+          <button
+            className="studio-archive"
+            onClick={() => {
+              audio.current?.pause();
+              setAudition(null);
+              setStopSignal((v) => v + 1);
+              setVoiceOpen(true);
+            }}
+          >
+            + Add a voice
           </button>
-          {active && (
+          <div className="studio-nav-heading">
+            <span>Recent episodes</span>
             <button
-              className="ml-3 underline"
-              onClick={async () => {
-                try {
-                  setTake(
-                    await json(await fetch(`/api/takes/${take!.id}/cancel`, { method: "POST" }))
-                  );
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
+              aria-label="Create episode"
+              disabled={studio.busy}
+              onClick={() => studio.create()}
             >
-              Cancel
+              +
             </button>
+          </div>
+          <div className="episode-list">
+            {studio.recent.map((e) => (
+              <button
+                key={e.id}
+                onClick={() => studio.open(e.id)}
+                disabled={studio.busy}
+                className={e.id === ep?.id ? "is-current" : ""}
+              >
+                <strong>{e.title}</strong>
+                <span>
+                  {e.block_count} blocks ·{" "}
+                  {new Date(e.updated_at).toLocaleDateString(undefined, {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </span>
+              </button>
+            ))}
+            {!studio.recent.length && (
+              <p className="studio-muted">Your episodes will appear here.</p>
+            )}
+          </div>
+          {ep && (
+            <>
+              <p className="studio-eyebrow cast-heading">Episode cast</p>
+              {cast.map((speaker, i) => (
+                <label className="cast-row" key={speaker}>
+                  <span className={`cast-avatar cast-${i % 2}`}>
+                    {speaker.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span>
+                    <strong>{speaker}</strong>
+                    <select
+                      disabled={studio.busy}
+                      aria-label={`${speaker} voice`}
+                      value={ep.blocks.find((b) => b.speaker === speaker)?.voice_id ?? ""}
+                      onChange={(e) => studio.voice(speaker, e.target.value)}
+                    >
+                      <option value="">Assign voice</option>
+                      {studio.voices.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
+              ))}
+            </>
           )}
-          {take && (
-            <p role="status">
-              Take: {take.status}
-              {take.error_message ? ` — ${take.error_message}` : ""}
-            </p>
+          <div className="studio-local">
+            Local workspace <span />
+          </div>
+        </nav>
+        <main id="script" className="studio-script">
+          {ep ? (
+            <>
+              <div className="episode-heading">
+                <p className="studio-eyebrow">Episode / Script</p>
+                <input
+                  disabled={studio.busy}
+                  aria-label="Episode title"
+                  value={ep.title}
+                  onChange={(e) => studio.edit({ title: e.target.value })}
+                />
+                <p>Write the conversation. Keep the best take of each line.</p>
+              </div>
+              <div className="script-toolbar">
+                <button
+                  disabled={studio.busy || studio.status === "Saving…" || ep.blocks.length >= 100}
+                  onClick={studio.add}
+                >
+                  + Add block
+                </button>
+                <button onClick={() => setImporting(!importing)}>Import script</button>
+                <span>{ep.blocks.length} blocks</span>
+                <label className="gap-control">
+                  Gap{" "}
+                  <input
+                    aria-label="Gap between lines"
+                    disabled={studio.busy}
+                    type="number"
+                    min={0}
+                    max={5}
+                    step={0.05}
+                    value={ep.gap_secs}
+                    onChange={(e) => studio.edit({ gap_secs: Number(e.target.value) })}
+                  />{" "}
+                  s
+                </label>
+                {active.length ? (
+                  <button
+                    className="studio-secondary"
+                    disabled={studio.busy}
+                    onClick={studio.cancel}
+                  >
+                    Cancel · {active.length}
+                  </button>
+                ) : (
+                  <button
+                    className="studio-primary"
+                    disabled={studio.busy || !ep.blocks.length}
+                    onClick={() => studio.generate(undefined, "stale")}
+                  >
+                    Generate missing{missing ? ` · ${missing}` : ""}
+                  </button>
+                )}
+                <button
+                  className="generate-all"
+                  disabled={studio.busy || !ep.blocks.length || !!active.length}
+                  onClick={() => studio.generate(undefined, "all")}
+                >
+                  Generate all
+                </button>
+              </div>
+              {importing && (
+                <section className="script-import">
+                  <label>
+                    Paste one speaker line per paragraph
+                    <textarea
+                      aria-label="Script to import"
+                      placeholder="Alice: Welcome back.&#10;Frank: It’s good to be here."
+                      value={script}
+                      onChange={(e) => setScript(e.target.value)}
+                      rows={5}
+                    />
+                  </label>
+                  <button
+                    className="studio-primary"
+                    disabled={studio.busy}
+                    onClick={() => {
+                      if (studio.importScript(script)) {
+                        setScript("");
+                        setImporting(false);
+                      }
+                    }}
+                  >
+                    Add to episode
+                  </button>
+                </section>
+              )}
+              <div className="script-column-headings">
+                <span>Script</span>
+                <span>Takes</span>
+              </div>
+              {ep.blocks.map((b, i) => {
+                const chosen = b.takes.find((t) => t.id === b.selected_take_id);
+                const stale =
+                  !!chosen && (chosen.script !== b.text || chosen.voice_id !== b.voice_id);
+                return (
+                  <article
+                    key={b.id ?? `new-${i}`}
+                    className={`script-row ${i === selected ? "is-focused" : ""}`}
+                    onClick={() => setSelected(i)}
+                  >
+                    <span className="block-number">{(i + 1).toString().padStart(2, "0")}</span>
+                    <div className="script-row-body">
+                      <div className="block-heading">
+                        <input
+                          aria-label={`Speaker for block ${i + 1}`}
+                          disabled={studio.busy}
+                          value={b.speaker}
+                          onChange={(e) =>
+                            studio.block(i, {
+                              speaker: e.target.value,
+                              voice_id:
+                                ep.blocks.find((x) => x.speaker === e.target.value)?.voice_id ??
+                                null,
+                            })
+                          }
+                        />
+                        <span>{b.takes.length.toString().padStart(2, "0")}</span>
+                      </div>
+                      <textarea
+                        aria-label={`Script block ${i + 1}`}
+                        disabled={studio.busy}
+                        value={b.text}
+                        placeholder="Write this line…"
+                        rows={Math.max(2, Math.ceil(b.text.length / 75))}
+                        onFocus={() => setSelected(i)}
+                        onChange={(e) => studio.block(i, { text: e.target.value })}
+                      />
+                      <div className="block-controls">
+                        <button disabled={!chosen} onClick={() => chosen && play(chosen.id)}>
+                          {audition === chosen?.id ? "Ⅱ Pause" : "▷ Play line"}
+                        </button>
+                        <time>{chosen?.duration_secs?.toFixed(1) ?? "—"} s</time>
+                        <button
+                          disabled={
+                            studio.busy ||
+                            !b.id ||
+                            !b.voice_id ||
+                            !b.text.trim() ||
+                            b.takes.some((t) => ["queued", "generating"].includes(t.status))
+                          }
+                          onClick={() => b.id && studio.generate(b.id)}
+                        >
+                          {b.takes.length ? "↻ Regenerate" : "Generate"}
+                        </button>
+                        <span className={stale ? "block-stale" : "block-selected"}>
+                          {stale
+                            ? "Text or voice changed"
+                            : chosen
+                              ? `Selected · ${b.takes.findIndex((t) => t.id === chosen.id) + 1}`
+                              : (b.takes.find((t) => ["queued", "generating"].includes(t.status))
+                                  ?.status ?? "No selected take")}
+                        </span>
+                        <button
+                          className="remove-block"
+                          aria-label={`Remove block ${i + 1}`}
+                          disabled={
+                            studio.busy ||
+                            studio.status === "Saving…" ||
+                            b.takes.some((t) => ["queued", "generating"].includes(t.status))
+                          }
+                          onClick={() => {
+                            studio.edit({ blocks: ep.blocks.filter((_, j) => j !== i) });
+                            setSelected(Math.max(0, i - 1));
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+              {!ep.blocks.length && (
+                <div className="studio-empty">
+                  <h2>Start with the conversation</h2>
+                  <p>
+                    Import a script written as Speaker: line, or add a block and write the first
+                    line. Assign each speaker a saved voice in the cast.
+                  </p>
+                  <button className="studio-primary" onClick={studio.add}>
+                    Add the first block
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="studio-empty">
+              <p className="studio-eyebrow">VibePod Studio</p>
+              <h1>Make room for the conversation.</h1>
+              <p>
+                Create an episode, write the script, and choose the take of each line you want your
+                listeners to hear.
+              </p>
+              <button className="studio-primary" disabled={studio.busy} onClick={studio.create}>
+                Create an episode
+              </button>
+            </div>
           )}
-          {error && (
-            <p role="alert" style={{ color: "var(--error)" }}>
-              {error}
-            </p>
+          {(studio.error || mediaError) && (
+            <div className="studio-error-banner" role="alert">
+              {studio.error || mediaError}
+              {studio.status === "Save failed" && (
+                <button onClick={() => studio.save().catch(() => {})}>Retry save</button>
+              )}
+            </div>
           )}
-          <AudioPlayer
-            audioUrl={take?.status === "complete" ? `/api/takes/${take.id}/audio` : null}
-          />
-        </section>
-      </main>
-    </>
+        </main>
+        <TakeInspector
+          block={block}
+          index={selected}
+          busy={studio.busy}
+          audition={audition}
+          onAudition={play}
+          onSelect={(tid) => block?.id && studio.select(block.id, tid)}
+          onGenerate={() => block?.id && studio.generate(block.id)}
+        />
+      </div>
+      <StudioTransport
+        title={ep?.title ?? "No episode open"}
+        src={
+          ready && ep
+            ? `/api/episodes/${ep.id}/audio?selection=${encodeURIComponent(ep.blocks.map((b) => b.selected_take_id).join(","))}&gap=${ep.gap_secs}`
+            : null
+        }
+        ready={ready}
+        stopSignal={stopSignal}
+        onStart={ep?.blocks
+          .slice(0, selected)
+          .reduce(
+            (sum, b) =>
+              sum +
+              (b.takes.find((t) => t.id === b.selected_take_id)?.duration_secs ?? 0) +
+              ep.gap_secs,
+            0
+          )}
+        onPlay={() => {
+          audio.current?.pause();
+          setAudition(null);
+        }}
+      />
+      <VoiceDialog
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        onSaved={studio.refreshVoices}
+      />
+      <ExportDialog
+        episode={ep}
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        onSave={studio.save}
+      />
+    </div>
   );
 }

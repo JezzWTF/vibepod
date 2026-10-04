@@ -6,6 +6,9 @@ export interface GenerationJob {
   status: GenerationStatus;
   script: string;
   speaker: string;
+  voice_id: string | null;
+  episode_id: string | null;
+  block_id: string | null;
   cfg_scale: number;
   inference_steps: number | null;
   duration_secs: number | null;

@@ -7,7 +7,7 @@ dependencies = [
   "torch==2.8.0", "torchaudio==2.8.0", "qwen-tts==0.1.1",
   "transformers==4.57.3", "accelerate==1.12.0", "huggingface-hub==0.36.2",
   "fastapi==0.142.2", "uvicorn==0.54.0", "soundfile==0.14.0",
-  "pydantic==2.13.5", "python-multipart==0.0.32", "requests>=2.32.2"
+  "pydantic==2.13.5", "python-multipart==0.0.32", "requests>=2.32.2", "pillow==12.2.0"
 ]
 [dependency-groups]
 dev = ["ruff>=0.11.0", "httpx==0.28.1"]

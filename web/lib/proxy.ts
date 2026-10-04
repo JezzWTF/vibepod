@@ -14,7 +14,13 @@ export async function proxy(request: NextRequest, path: string) {
       body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
     });
     const output = new Headers({ "Cache-Control": "no-store" });
-    for (const name of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+    for (const name of [
+      "content-type",
+      "content-length",
+      "content-range",
+      "accept-ranges",
+      "content-disposition",
+    ]) {
       const value = response.headers.get(name);
       if (value) output.set(name, value);
     }

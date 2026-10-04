@@ -4,6 +4,7 @@ web/node_modules/
 
 # Build outputs
 web/.next/
+web/.next-check/
 web/tsconfig.tsbuildinfo
 web/next-env.d.ts
 

@@ -7,6 +7,7 @@ interface AudioPlayerState {
   currentTime: number;
   duration: number;
   volume: number;
+  error: string;
 }
 
 export function useAudioPlayer(audioUrl: string | null) {
@@ -16,6 +17,7 @@ export function useAudioPlayer(audioUrl: string | null) {
     currentTime: 0,
     duration: 0,
     volume: 1,
+    error: "",
   });
 
   // Create/replace the Audio element whenever the URL changes
@@ -25,15 +27,27 @@ export function useAudioPlayer(audioUrl: string | null) {
         audioRef.current.pause();
         audioRef.current = null;
       }
-      setState({ isPlaying: false, currentTime: 0, duration: 0, volume: 1 });
+      setState({ isPlaying: false, currentTime: 0, duration: 0, volume: 1, error: "" });
       return;
     }
 
     const audio = new Audio(audioUrl);
     audioRef.current = audio;
+    setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0, duration: 0, error: "" }));
+    audio.volume = state.volume;
 
     const controller = new AbortController();
     const { signal } = controller;
+    audio.addEventListener(
+      "error",
+      () =>
+        setState((prev) => ({
+          ...prev,
+          isPlaying: false,
+          error: "Audio could not be loaded. Try again.",
+        })),
+      { signal }
+    );
 
     audio.addEventListener(
       "timeupdate",
@@ -65,6 +79,7 @@ export function useAudioPlayer(audioUrl: string | null) {
     return () => {
       audio.pause();
       controller.abort();
+      if (audioRef.current === audio) audioRef.current = null;
     };
   }, [audioUrl]);
 
@@ -72,7 +87,11 @@ export function useAudioPlayer(audioUrl: string | null) {
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
-      audio.play();
+      audio
+        .play()
+        .catch(() =>
+          setState((prev) => ({ ...prev, error: "Playback could not start. Try again." }))
+        );
     } else {
       audio.pause();
     }
@@ -81,7 +100,28 @@ export function useAudioPlayer(audioUrl: string | null) {
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.currentTime = Math.max(0, Math.min(time, audio.duration));
+    audio.currentTime = Math.max(
+      0,
+      Math.min(time, Number.isFinite(audio.duration) ? audio.duration : time)
+    );
+  }, []);
+
+  const pause = useCallback(() => audioRef.current?.pause(), []);
+
+  const playFrom = useCallback((time: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const start = () => {
+      if (audioRef.current !== audio) return;
+      audio.currentTime = time;
+      audio
+        .play()
+        .catch(() =>
+          setState((prev) => ({ ...prev, error: "Playback could not start. Try again." }))
+        );
+    };
+    if (audio.readyState >= 1) start();
+    else audio.addEventListener("loadedmetadata", start, { once: true });
   }, []);
 
   const setVolume = useCallback((v: number) => {
@@ -97,7 +137,10 @@ export function useAudioPlayer(audioUrl: string | null) {
     duration: state.duration,
     volume: state.volume,
     toggle,
+    pause,
     seek,
     setVolume,
+    playFrom,
+    error: state.error,
   };
 }

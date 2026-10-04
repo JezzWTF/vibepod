@@ -21,6 +21,9 @@ def get_voice(voice_id):
 
 
 def save_voice(name, samples, rate, transcript="", kind="clone", description=""):
+    name = name.strip()
+    if not name:
+        raise ValueError("Enter a voice name")
     samples = np.asarray(samples, dtype=np.float32)
     if samples.ndim == 2:
         samples = samples.mean(axis=1)

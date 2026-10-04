@@ -9,6 +9,7 @@ relationships are added alongside these compatible Phase 1 rows.
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 from contextlib import contextmanager
@@ -59,7 +60,7 @@ def init_db() -> None:
     with _connect() as conn:
         conn.execute(_CREATE_GENERATIONS)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(generations)")}
-        for name in ("voice_id", "model_id", "settings_json"):
+        for name in ("voice_id", "model_id", "settings_json", "episode_id", "block_id"):
             if name not in columns:
                 conn.execute(f"ALTER TABLE generations ADD COLUMN {name} TEXT")
         conn.execute(
@@ -67,11 +68,30 @@ def init_db() -> None:
         )
 
 
-def create_job(job_id, text, voice, voice_id, settings_json):
+def create_job(
+    job_id,
+    text,
+    voice,
+    voice_id,
+    settings_json,
+    episode_id=None,
+    block_id=None,
+    model_id="Qwen3-TTS-12Hz-1.7B-Base",
+):
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json) VALUES (?,?,'queued',?,?,0,?,'Qwen3-TTS-12Hz-1.7B-Base',?)",
-            (job_id, datetime.now(UTC).isoformat(), text, voice, voice_id, settings_json),
+            "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json,episode_id,block_id) VALUES (?,?,'queued',?,?,0,?,?,?,?,?)",
+            (
+                job_id,
+                datetime.now(UTC).isoformat(),
+                text,
+                voice,
+                voice_id,
+                model_id,
+                settings_json,
+                episode_id,
+                block_id,
+            ),
         )
 
 
@@ -157,14 +177,38 @@ def get_job(job_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+class TakeInUse(ValueError):
+    pass
+
+
 def delete_job(job_id: str) -> bool:
     """Delete the job record and its files. Returns True if the record existed."""
     directory = job_dir(job_id)
-    if directory.exists():
-        shutil.rmtree(directory)
-
     with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        tables = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        if (
+            "script_blocks" in tables
+            and conn.execute(
+                "SELECT 1 FROM script_blocks WHERE selected_take_id=?", (job_id,)
+            ).fetchone()
+        ):
+            raise TakeInUse("Select another take in the episode before deleting this one")
+        if "exports" in tables:
+            snapshots = conn.execute(
+                "SELECT snapshot_json FROM exports WHERE status IN ('queued','running')"
+            ).fetchall()
+            if any(
+                block["selected_take_id"] == job_id
+                for row in snapshots
+                for block in json.loads(row[0])["blocks"]
+            ):
+                raise TakeInUse("Wait for the episode export to finish before deleting this take")
         result = conn.execute("DELETE FROM generations WHERE id = ?", (job_id,))
+    if result.rowcount and directory.exists():
+        shutil.rmtree(directory)
     return result.rowcount > 0
 
 

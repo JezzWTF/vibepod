@@ -1,0 +1,13 @@
+# Studio acceptance evidence
+
+Verified on GlassBox, RTX 4070 12 GB, 2026-10-04. User approved the Studio shell, voice/export panels and Library redesign before integration.
+
+- Real GPU conversation: Alice selected take 3.36 s, Frank 3.84 s, configured 0.4 s gap, assembled episode 7.6 s. An incorrect initial Alice verification assignment used Frank; correcting the cast marked that take stale and generated an Alice retake. Selection switched to Alice while retaining the original version. Every take now displays its source voice.
+- Browser: episode reopening, real waveform previews, full playback, selected-block playback controls, script editing/stale feedback, cast controls, voice design preview/save, export progress and finished downloads. Designed reference 14 s, followed by a separate new line using that saved voice (4.08 s).
+- Real speech MP3 measures −19.16 LUFS; WAV measures −19.12 LUFS. ffprobe confirms title, album/show and episode track metadata. Next proxy download returns 200 and an attachment filename. Completed exports survived backend restart.
+- A first short-speech MP3 missed the target at −20.3 LUFS. Verification withheld the file. Measured correction re-encodes from the original source and checks the actual encoded result; no repeated MP3 transcoding. That failed attempt remains visible in export history.
+- Seven API tests cover legacy takes, cancellation, restart/input validation, script revision conflicts and ownership, retake selection/staleness, WAV assembly/gaps/ranges, reusable designed voices, actual FFmpeg MP3/WAV normalization, metadata, embedded artwork and export persistence. Next production build, TypeScript and Ruff checks pass.
+- Final browser flow started from a new episode: pasted two speakers, assigned the correct saved references, generated both blocks on CUDA, regenerated Alice and selected take 2, played the conversation and exported MP3. That MP3 measures −19.05 LUFS. Library shows the episode and all versions; episode deep links reopen the correct script. A 390 px responsive check found no horizontal page overflow; the normal preview size was restored.
+- Active VoiceDesign cancellation was exercised after the decoder started: HTTP cancellation returned in 0.020 s, status became cancelled and no audio was published. Voice design uses the same talker stopping boundary as line generation.
+
+Episode audio is currently mono, so its target is −19 LUFS. The export worker derives the target from the assembled channel count (−16 for stereo); stereo editing, music, timeline and per-clip trimming are outside this scope. FFmpeg must be installed separately. CUDA inference remains required; API tests use a fake model adapter and actual FFmpeg, not a substitute for the real GPU evidence above.
