@@ -1,0 +1,7 @@
+vibevoice @ git+https://github.com/vibevoice-community/VibeVoice.git@952326ddb264062466a888cf32a5b2f4e803e16e
+transformers==4.51.3
+accelerate==1.6.0
+peft==0.15.2
+diffusers==0.33.1
+numpy
+soundfile
