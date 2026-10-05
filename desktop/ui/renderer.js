@@ -184,6 +184,7 @@ function render(state) {
 if (api) {
   api.onState(render);
   api.state().then(render).catch(notice);
+  api.version().then((version) => ($("footer-version").textContent = version));
   document
     .querySelectorAll("[data-location]")
     .forEach(

@@ -249,20 +249,12 @@
   margin-top: 4px;
   padding: 3px 0;
 }
-.studio-local {
+.studio-version {
   margin-top: auto;
   padding-top: 45px;
   font-size: 11px;
   color: var(--studio-muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.studio-local > span {
-  background: var(--studio-accent);
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+  font-variant-numeric: tabular-nums;
 }
 .studio-script {
   padding: 36px 36px 40px;
@@ -705,7 +697,7 @@
   .studio-navigation > .studio-eyebrow,
   .workspace-tab,
   .studio-archive,
-  .studio-local,
+  .studio-version,
   .cast-heading {
     display: none;
   }

@@ -95,6 +95,7 @@ else {
         });
       }
       handle("state", () => controller.state);
+      handle("version", () => `v${app.getVersion()}${app.isPackaged ? "" : " dev"}`);
       handle("folder", async (key) => {
         if (!["models", "library"].includes(key)) throw new Error("Unknown storage location.");
         if (controller.config || controller.state.busy)

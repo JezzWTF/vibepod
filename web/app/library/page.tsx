@@ -177,9 +177,7 @@ export default function LibraryPage() {
             Studio
           </a>
           <span className="workspace-tab">Library</span>
-          <div className="studio-local">
-            Local workspace <span />
-          </div>
+          <div className="studio-version">{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</div>
         </nav>
         <main className="library-main">
           <p className="studio-eyebrow">Library / Episodes and takes</p>

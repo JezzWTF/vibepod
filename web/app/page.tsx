@@ -229,9 +229,7 @@ export default function StudioPage() {
               ))}
             </>
           )}
-          <div className="studio-local">
-            Local workspace <span />
-          </div>
+          <div className="studio-version">{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</div>
         </nav>
         <main id="script" className="studio-script">
           {ep ? (
