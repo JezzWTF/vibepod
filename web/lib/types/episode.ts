@@ -15,6 +15,7 @@ export type Episode = {
   title: string;
   revision: number;
   gap_secs: number;
+  sources: string;
   blocks: ScriptBlock[];
 };
 export type EpisodeState = "active" | "archived" | "trashed";

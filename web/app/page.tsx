@@ -1,17 +1,24 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useStudio } from "@/hooks/useStudio";
+import { useScriptJob } from "@/hooks/useScriptJob";
 import { MAX_BLOCKS } from "@/lib/types/episode";
 import TakeInspector from "@/components/TakeInspector";
 import StudioTransport from "@/components/StudioTransport";
 import VoiceDialog from "@/components/VoiceDialog";
 import ExportDialog from "@/components/ExportDialog";
+import WriteDialog from "@/components/WriteDialog";
+import SourcesDialog, { sourceCount } from "@/components/SourcesDialog";
 import "./studio.css";
+import "./write.css";
 
 export default function StudioPage() {
   const studio = useStudio();
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const writer = useScriptJob();
   const [stopSignal, setStopSignal] = useState(0);
   const [selected, setSelected] = useState(0),
     [importing, setImporting] = useState(false),
@@ -20,6 +27,30 @@ export default function StudioPage() {
     [mediaError, setMediaError] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
   const ep = studio.episode;
+  async function applyScript() {
+    const job = writer.job;
+    if (!job) return false;
+    try {
+      const saved = job.target === "this" && ep ? await studio.save() : null;
+      const result =
+        job.target === "this" && saved
+          ? await writer.apply(saved.id, saved.revision)
+          : await writer.apply();
+      if (!result) return false;
+      studio.adopt(result);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const sections = writer.job?.outline.sections || "…";
+  const scriptChip = !writer.job
+    ? null
+    : writer.running
+      ? `Writing ${Math.min(writer.job.drafted + 1, writer.job.outline.sections || 1)}/${sections}`
+      : writer.job.status === "done"
+        ? "Script ready"
+        : "Writing stopped";
   const block = ep?.blocks[selected];
   const cast = Array.from(new Set(ep?.blocks.map((b) => b.speaker) ?? []));
   const active =
@@ -83,6 +114,19 @@ export default function StudioPage() {
         <span className="studio-save" role="status">
           {studio.status}
         </span>
+        {scriptChip && (
+          <button
+            className={`write-chip ${writer.running ? "running" : ""}`}
+            role="status"
+            onClick={() => setWriteOpen(true)}
+          >
+            <i />
+            {scriptChip}
+          </button>
+        )}
+        <button className="studio-secondary" onClick={() => setWriteOpen(true)}>
+          Write with AI
+        </button>
         <button
           className="studio-primary"
           disabled={!ep || studio.busy}
@@ -211,6 +255,11 @@ export default function StudioPage() {
                   + Add block
                 </button>
                 <button onClick={() => setImporting(!importing)}>Import script</button>
+                {sourceCount(ep.sources) > 0 && (
+                  <button onClick={() => setSourcesOpen(true)}>
+                    Sources <span>{sourceCount(ep.sources)}</span>
+                  </button>
+                )}
                 <span>{ep.blocks.length} blocks</span>
                 <label className="gap-control">
                   Gap{" "}
@@ -373,6 +422,9 @@ export default function StudioPage() {
                   <button className="studio-primary" onClick={studio.add}>
                     Add the first block
                   </button>
+                  <button className="studio-secondary" onClick={() => setWriteOpen(true)}>
+                    Write with AI
+                  </button>
                 </div>
               )}
             </>
@@ -386,6 +438,9 @@ export default function StudioPage() {
               </p>
               <button className="studio-primary" disabled={studio.busy} onClick={studio.create}>
                 Create an episode
+              </button>
+              <button className="studio-secondary" onClick={() => setWriteOpen(true)}>
+                Write with AI
               </button>
             </div>
           )}
@@ -432,6 +487,19 @@ export default function StudioPage() {
         open={voiceOpen}
         onClose={() => setVoiceOpen(false)}
         onSaved={studio.refreshVoices}
+      />
+      <WriteDialog
+        open={writeOpen}
+        onClose={() => setWriteOpen(false)}
+        script={writer}
+        canAppend={!!ep}
+        onOpenEpisode={applyScript}
+      />
+      <SourcesDialog
+        open={sourcesOpen}
+        onClose={() => setSourcesOpen(false)}
+        title={ep?.title ?? ""}
+        sources={ep?.sources ?? ""}
       />
       <ExportDialog
         episode={ep}

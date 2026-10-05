@@ -1,6 +1,7 @@
 """HTTP surface for script-writing jobs."""
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -78,7 +79,9 @@ def _require_idle(request: Request) -> None:
 
 @router.get("/script-providers")
 def providers():
-    return {"items": [status(name) for name in ("claude", "codex", "ollama")]}
+    names = ("claude", "codex", "ollama")
+    with ThreadPoolExecutor(max_workers=len(names)) as pool:
+        return {"items": list(pool.map(status, names))}
 
 
 @router.post("/script-jobs", status_code=201)

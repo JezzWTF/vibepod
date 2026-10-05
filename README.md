@@ -46,6 +46,14 @@ Episode endpoints include `GET/POST /episodes` (`GET ?state=active|archived|tras
 
 To verify a production build while a development preview is running, set `$env:VIBEPOD_CHECK_BUILD='1'` before `pnpm build`. This uses the separate ignored `web/.next-check` directory; normal builds and starts still use `.next`.
 
+## Write with AI
+
+The Studio's **Write with AI** dialog researches a topic and writes a script. It drives the `claude` or `codex` command-line tool that is already signed in on this machine, exactly as typing the prompt into the app would, so it uses your subscription. VibePod never reads or stores a login. Ollama can draft from your own notes; it cannot search the web. Keep the CLIs updated, since an old one can reject the model your app uses.
+
+A job runs in the background: research, outline, one draft per section, and an optional review. Each finished stage is saved, so a usage limit, cancellation or restart resumes where it stopped, and you can resume with a different provider. The result becomes a new episode or is appended to the open one, and the research sources stay with the episode under **Sources**. One script is written at a time.
+
+The same pipeline runs from a terminal: `cd server`, then `python -m script_agent "topic" --provider claude --minutes 10`. Add `--import-to http://127.0.0.1:8000` to create the episode. Endpoints are `GET /script-providers` and `/script-jobs` (`POST`, `GET current|{id}`, `{id}/cancel|resume|discard|apply`).
+
 ## Checks
 
 ```powershell
