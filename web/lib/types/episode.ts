@@ -16,4 +16,14 @@ export type Episode = {
   gap_secs: number;
   blocks: ScriptBlock[];
 };
-export type EpisodeSummary = { id: string; title: string; block_count: number; updated_at: string };
+export type EpisodeState = "active" | "archived" | "trashed";
+export type EpisodeAction = "archive" | "trash" | "restore";
+export type EpisodeCounts = Record<EpisodeState, number>;
+export type EpisodeSummary = {
+  id: string;
+  title: string;
+  block_count: number;
+  updated_at: string;
+  revision: number;
+  lifecycle: EpisodeState;
+};
