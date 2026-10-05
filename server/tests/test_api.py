@@ -252,6 +252,20 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(store.get_job(queued)["status"], "cancelled")
         self.assertEqual(self.client.delete(f"/takes/{tid}").status_code, 200)
 
+    def test_long_episode_accepts_up_to_the_block_limit(self):
+        def body(n):
+            return {
+                "title": "Long",
+                "blocks": [{"speaker": "Host", "voice_id": self.voice, "text": "Hi"}] * n,
+            }
+
+        ok = self.client.post("/episodes", json=body(server.MAX_BLOCKS))
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(len(ok.json()["blocks"]), server.MAX_BLOCKS)
+        self.assertEqual(
+            self.client.post("/episodes", json=body(server.MAX_BLOCKS + 1)).status_code, 422
+        )
+
     def test_restart_and_input_validation(self):
         store.create_job("take_interrupted", "Hello", "Host", self.voice, "{}")
         store.init_db()

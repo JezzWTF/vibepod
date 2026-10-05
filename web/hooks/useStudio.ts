@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MAX_BLOCKS } from "@/lib/types/episode";
 import type { Episode, EpisodeSummary, Voice, ScriptBlock } from "@/lib/types/episode";
 
 async function api(path: string, method = "GET", body?: unknown) {
@@ -233,8 +234,8 @@ export function useStudio() {
         selected_take_id: null,
       });
     }
-    if (!parsed.length || parsed.length + draft.current.blocks.length > 100) {
-      setError("Import between 1 and 100 blocks in total.");
+    if (!parsed.length || parsed.length + draft.current.blocks.length > MAX_BLOCKS) {
+      setError(`Import between 1 and ${MAX_BLOCKS} blocks in total.`);
       return false;
     }
     setError("");

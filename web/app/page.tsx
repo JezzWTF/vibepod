@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useStudio } from "@/hooks/useStudio";
+import { MAX_BLOCKS } from "@/lib/types/episode";
 import TakeInspector from "@/components/TakeInspector";
 import StudioTransport from "@/components/StudioTransport";
 import VoiceDialog from "@/components/VoiceDialog";
@@ -202,7 +203,9 @@ export default function StudioPage() {
               </div>
               <div className="script-toolbar">
                 <button
-                  disabled={studio.busy || studio.status === "Saving…" || ep.blocks.length >= 100}
+                  disabled={
+                    studio.busy || studio.status === "Saving…" || ep.blocks.length >= MAX_BLOCKS
+                  }
                   onClick={studio.add}
                 >
                   + Add block

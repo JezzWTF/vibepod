@@ -258,6 +258,9 @@ def create_take(request: TakeRequest):
     return require_take(tid)
 
 
+MAX_BLOCKS = 500
+
+
 class BlockRequest(BaseModel):
     id: str | None = None
     speaker: str = Field(min_length=1, max_length=80)
@@ -268,7 +271,7 @@ class BlockRequest(BaseModel):
 
 class EpisodeRequest(BaseModel):
     title: str = Field(min_length=1, max_length=160)
-    blocks: list[BlockRequest] = Field(max_length=100)
+    blocks: list[BlockRequest] = Field(max_length=MAX_BLOCKS)
     gap_secs: float = Field(default=0.25, ge=0, le=5)
     revision: int | None = None
 
