@@ -1,7 +1,7 @@
 {
   "name": "vibepod-desktop",
   "productName": "VibePod",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "VibePod local podcast Studio",
   "author": "JezzWTF",
   "private": true,

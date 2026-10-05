@@ -2,9 +2,11 @@
 
 A local script-first podcast studio for an NVIDIA GPU. Write or import a conversation, assign cloned or designed voices, generate immutable line takes, audition alternatives, and export the selected episode to podcast-ready MP3 or WAV.
 
-## Windows setup
+## Install
 
-For the Windows desktop installer, first-launch setup and repair behavior, see [desktop installation](docs/desktop-installation.md). The development installer bundles the Studio and manages its separate Python engine without developer terminals.
+End users run the Windows installer and need only an NVIDIA GPU and current driver; see [desktop installation](docs/desktop-installation.md) for first launch, repair and how the installer is built. The sections below set up a development checkout.
+
+## Windows development setup
 
 Install a current NVIDIA driver, Git, and Microsoft App Installer (`winget`). From PowerShell in the repository root:
 

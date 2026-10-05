@@ -1,6 +1,10 @@
 # Windows desktop installation
 
-The desktop host retains the Next Studio and Python voice engine. It supplies Electron's Node runtime, a production standalone frontend, uv, FFmpeg and FFprobe. Users need a supported NVIDIA GPU (12 GB VRAM) and current driver; system Python, Node, Git and developer terminals are not required for the packaged application.
+The desktop host retains the Next Studio and Python voice engine and gives end users one application to install and open.
+
+## Installing (end users)
+
+Run `VibePod Setup <version>.exe`. Nothing else needs installing first except a supported NVIDIA GPU (12 GB VRAM) and a current graphics driver. The installer bundles Electron's Node runtime, the production Studio frontend, uv, FFmpeg and FFprobe; system Python, Node, Git, pnpm and developer terminals are not required, and `setup.ps1` is not part of this path. The Python/CUDA engine and the models are downloaded by the application on first launch.
 
 ## First launch
 
@@ -20,19 +24,35 @@ Recovery distinguishes graphics-driver issues, model downloads, voice-engine dep
 
 Changing installed storage locations and automatic application updates are not yet implemented. Retaining the previous runtime does not yet provide a user-facing rollback command. First installation currently uses bundled uv and the dependency lock, rather than prebuilt GPU environment archives.
 
-## Developer build
+## Building the installer
 
-Run the repository Windows setup first (`./setup.ps1 -InstallTools`). It installs Node, uv and FFmpeg, which `desktop:prepare` copies from the build machine into the installer; it does not download them. The repository uses pnpm 11, and the build scripts it allows (Electron, its installer tooling and sharp) are listed under `allowBuilds` in `pnpm-workspace.yaml`. Then:
+The installer is built on a Windows build machine, then copied to any machine that should install it. The build machine needs the prerequisites below; the installing machine does not.
+
+1. Install the build prerequisites: Git, Node 22 or newer, pnpm 11, uv, FFmpeg and FFprobe. `./setup.ps1 -InstallTools` installs them with winget, but it also installs the full development environment and downloads the models, so it is more than a build needs. `desktop:prepare` copies uv, FFmpeg and FFprobe from this machine into the installer; it does not download them, and stops with "Missing build tool" if one is absent.
+2. From the repository root:
+
+```powershell
+pnpm install
+pnpm desktop:prepare
+pnpm desktop:package
+```
+
+The repository uses pnpm 11. The dependency build scripts it allows (Electron, its installer tooling and sharp) are listed under `allowBuilds` in `pnpm-workspace.yaml`, so a fresh `pnpm install` needs no manual approval. Build tools must resolve to real uv, FFmpeg and FFprobe executables, not PATH shims. Explicit `VIBEPOD_UV_BINARY`, `VIBEPOD_FFMPEG_BINARY` and `VIBEPOD_FFPROBE_BINARY` paths override discovery. Generated resources are ignored by Git.
+
+Build output defaults to `%LOCALAPPDATA%/VibePod/desktop-builds/<checkout-id>`; `VIBEPOD_DESKTOP_OUTPUT` overrides it. Packaging checks for 2 GB free build space. Close the desktop before preparing its resources. Builds are unsigned unless signing credentials are configured, so this is a development installer, not a signed release. The version comes from `desktop/package.json`; it is 0.1.0 until a release is made.
+
+## Running the desktop from source
+
+After the repository's development setup (`./setup.ps1 -InstallTools`, see [Windows setup and development](windows-development.md)):
 
 ```powershell
 pnpm desktop:prepare
 pnpm desktop
-pnpm desktop:package
 pnpm test:desktop
 ```
 
-Development may reuse the repository's verified Python environment and model files, but uses a separate desktop library. The production installer creates its own runtime. Build tools must resolve to real uv, FFmpeg and FFprobe executables, not PATH shims. Explicit `VIBEPOD_UV_BINARY`, `VIBEPOD_FFMPEG_BINARY` and `VIBEPOD_FFPROBE_BINARY` paths override discovery. Generated resources are ignored by Git.
+Development may reuse the repository's verified Python environment and model files, but uses a separate desktop library. The production installer creates its own runtime.
 
-Build output defaults to `%LOCALAPPDATA%/VibePod/desktop-builds/<checkout-id>`; `VIBEPOD_DESKTOP_OUTPUT` overrides it. Packaging checks for 2 GB free build space. Close the desktop before preparing its resources. Builds are unsigned unless signing credentials are configured. This is a development installer, not a signed release.
+## Verification status
 
-Current-machine checks cover the native host, real GPU detection, verification of existing pinned models, production Studio startup, isolated library storage and transactional repair tests. These do not validate installation on a clean Windows machine. That test remains explicitly deferred.
+Current-machine checks cover the native host, real GPU detection, verification of existing pinned models, production Studio startup, isolated library storage and transactional repair tests. They do not validate installation on a clean Windows machine; that test has not been completed.
