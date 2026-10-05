@@ -23,6 +23,8 @@ import voice_store as voices
 from episode_audio import assemble
 from ids import take_id
 from model_adapter import Cancelled, QwenAdapter
+from script_agent import jobs as script_jobs
+from script_agent.api import router as script_router
 from waveform import write_peaks
 
 
@@ -31,19 +33,24 @@ async def lifespan(app):
     store.init_db()
     episodes.init_episodes()
     exports.init_exports()
+    script_jobs.init()
+    app.state.script_worker = ThreadPoolExecutor(max_workers=1)
+    app.state.script_cancel = {}
     app.state.adapter = QwenAdapter()
     app.state.worker = ThreadPoolExecutor(max_workers=1)
     app.state.export_worker = ThreadPoolExecutor(max_workers=1)
     app.state.pending = {}
     app.state.lock = threading.Lock()
     yield
-    for event in list(app.state.pending.values()):
+    for event in list(app.state.pending.values()) + list(app.state.script_cancel.values()):
         event.set()
+    app.state.script_worker.shutdown(wait=True, cancel_futures=True)
     app.state.worker.shutdown(wait=True, cancel_futures=True)
     app.state.export_worker.shutdown(wait=True, cancel_futures=True)
 
 
 app = FastAPI(title="VibePod Studio", lifespan=lifespan)
+app.include_router(script_router)
 
 
 def progress_reporter(tid):
@@ -258,7 +265,7 @@ def create_take(request: TakeRequest):
     return require_take(tid)
 
 
-MAX_BLOCKS = 500
+MAX_BLOCKS = episodes.MAX_BLOCKS
 
 
 class BlockRequest(BaseModel):

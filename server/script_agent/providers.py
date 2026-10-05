@@ -232,3 +232,33 @@ def make_provider(name: str, model: str | None = None) -> Provider:
             raise ProviderError("Ollama needs a model name, e.g. llama3.1")
         return Ollama(model)
     raise ProviderError(f"Unknown provider: {name}")
+
+
+def status(name: str) -> dict:
+    """Is this backend usable right now? state is ready, signed_out, missing or offline."""
+    labels = {"claude": "Claude", "codex": "Codex", "ollama": "Ollama"}
+    result: dict = {"id": name, "name": labels[name], "state": "ready", "models": []}
+    try:
+        if name == "ollama":
+            with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as response:
+                result["models"] = [m["name"] for m in json.load(response).get("models", [])]
+            return result
+        args = (
+            [_executable(name), "auth", "status"]
+            if name == "claude"
+            else [_executable(name), "login", "status"]
+        )
+        code, out, err = run_process(args, "", 15, None)
+        text = out + err
+        signed_in = code == 0 and (
+            json.loads(out).get("loggedIn") if name == "claude" else "logged in" in text.lower()
+        )
+        if not signed_in:
+            result["state"] = "signed_out"
+    except ProviderError:
+        result["state"] = "missing"
+    except (urllib.error.URLError, TimeoutError, OSError):
+        result["state"] = "offline"
+    except (ValueError, KeyError):
+        result["state"] = "signed_out"
+    return result

@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 
 import generation_store as store
 
+MAX_BLOCKS = 500
+
 
 class Conflict(ValueError):
     pass
@@ -26,6 +28,7 @@ def init_episodes():
             ("gap_secs", "REAL NOT NULL DEFAULT 0.25"),
             ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
             ("trash_previous", "TEXT"),
+            ("sources", "TEXT NOT NULL DEFAULT ''"),
         ):
             if name not in columns:
                 conn.execute(f"ALTER TABLE episodes ADD COLUMN {name} {definition}")
@@ -50,12 +53,12 @@ def _write_blocks(conn, eid, blocks):
         )
 
 
-def create(title, blocks, gap_secs=0.25):
+def create(title, blocks, gap_secs=0.25, sources=""):
     eid, now = _id("episode"), datetime.now(UTC).isoformat()
     with store._connect() as conn:
         conn.execute(
-            "INSERT INTO episodes (id,title,created_at,updated_at,gap_secs) VALUES (?,?,?,?,?)",
-            (eid, title, now, now, gap_secs),
+            "INSERT INTO episodes (id,title,created_at,updated_at,gap_secs,sources) VALUES (?,?,?,?,?,?)",
+            (eid, title, now, now, gap_secs, sources),
         )
         _write_blocks(conn, eid, blocks)
     return get(eid)
@@ -150,7 +153,7 @@ def change_lifecycle(eid, action, revision):
     return get(eid, include_trashed=True)
 
 
-def update(eid, title, blocks, revision, gap_secs=0.25):
+def update(eid, title, blocks, revision, gap_secs=0.25, sources=None):
     now = datetime.now(UTC).isoformat()
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -183,8 +186,8 @@ def update(eid, title, blocks, revision, gap_secs=0.25):
                 if not take or take[0] != "complete":
                     raise ValueError("Select a completed take belonging to this block")
         conn.execute(
-            "UPDATE episodes SET title=?,updated_at=?,revision=revision+1,gap_secs=? WHERE id=?",
-            (title, now, gap_secs, eid),
+            "UPDATE episodes SET title=?,updated_at=?,revision=revision+1,gap_secs=?,sources=COALESCE(?,sources) WHERE id=?",
+            (title, now, gap_secs, sources, eid),
         )
         conn.execute("DELETE FROM script_blocks WHERE episode_id=?", (eid,))
         _write_blocks(conn, eid, blocks)
@@ -243,3 +246,20 @@ def selected_by(tid):
             conn.execute("SELECT 1 FROM script_blocks WHERE selected_take_id=?", (tid,)).fetchone()
             is not None
         )
+
+
+def append_script(eid, revision, new_blocks, sources, limit):
+    """Add generated blocks after the last one, reusing the voices already cast to each speaker."""
+    episode = get(eid)
+    if not episode:
+        return None
+    if len(episode["blocks"]) + len(new_blocks) > limit:
+        raise ValueError(f"An episode can have at most {limit} blocks")
+    keep = ("id", "speaker", "voice_id", "text", "selected_take_id")
+    blocks = [{key: b[key] for key in keep} for b in episode["blocks"]]
+    blocks += [
+        {"speaker": b["speaker"], "text": b["text"], "voice_id": episode["cast"].get(b["speaker"])}
+        for b in new_blocks
+    ]
+    merged = "\n\n".join(part for part in (episode["sources"], sources) if part.strip())
+    return update(eid, episode["title"], blocks, revision, episode["gap_secs"], merged)
