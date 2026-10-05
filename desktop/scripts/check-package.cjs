@@ -10,6 +10,7 @@ const REQUIRED = [
   ["bin/ffprobe.exe", MB],
   ["web/server.js", 1],
   ["server/tts_server.py", 1],
+  ["server/script_agent/api.py", 1],
   ["server/uv.lock", 1],
   ["helpers/dev.mjs", 1],
   ["helpers/parent-watch.cjs", 1],
