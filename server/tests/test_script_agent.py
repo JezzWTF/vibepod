@@ -181,6 +181,11 @@ class ProcessTest(unittest.TestCase):
             self.assertEqual(CodexCli().command(True, Path("o"))[1], "--search")
             self.assertNotIn("--search", CodexCli().command(False, Path("o")))
 
+    def test_setup_failures_say_how_to_fix_them(self):
+        self.assertIn("Update the CLI", providers.explain("The 'x' model is not supported"))
+        self.assertIn("Sign in", providers.explain("OAuth session expired"))
+        self.assertEqual(providers.explain("usage limit reached"), "usage limit reached")
+
     def test_missing_cli_is_a_clear_error(self):
         missing = mock.patch.object(providers.shutil, "which", lambda name: None)
         with missing, self.assertRaisesRegex(ProviderError, "not installed"):

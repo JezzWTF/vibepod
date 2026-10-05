@@ -82,6 +82,16 @@ def run_process(
                 raise ProviderError(f"Timed out after {int(timeout)} s") from None
 
 
+def explain(message: str) -> str:
+    """Add the fix for the failures that are the user's setup, not the model's."""
+    lower = message.lower()
+    if "not supported" in lower and "model" in lower:
+        return f"{message} Update the CLI, or choose a model your account supports."
+    if any(k in lower for k in ("oauth", "authenticate", "not logged in", "log in", "login")):
+        return f"{message} Sign in to the CLI, then retry."
+    return message
+
+
 def _executable(name: str) -> str:
     path = shutil.which(name)
     if not path:
@@ -126,7 +136,7 @@ class ClaudeCli:
                 (err or out).strip()[:400] or f"claude exited with {code}"
             ) from None
         if data.get("is_error") or code != 0:
-            raise ProviderError(str(data.get("result") or err).strip()[:400])
+            raise ProviderError(explain(str(data.get("result") or err).strip()[:400]))
         return str(data.get("result", ""))
 
 
@@ -163,7 +173,7 @@ class CodexCli:
             code, out, err = run_process(self.command(web, last), prompt, timeout, cancel)
             text = last.read_text(encoding="utf-8", errors="replace").strip()
             if code != 0 or not text:
-                raise ProviderError(_codex_error(out, err) or f"codex exited with {code}")
+                raise ProviderError(explain(_codex_error(out, err)) or f"codex exited with {code}")
             return text
         finally:
             last.unlink(missing_ok=True)
