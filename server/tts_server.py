@@ -7,6 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import soundfile as sf
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -239,15 +240,18 @@ def create_take(request: TakeRequest):
                 409, "Save the current script and voice assignment before generating"
             )
     tid, event = take_id(), threading.Event()
-    store.create_job(
-        tid,
-        request.text,
-        voice["name"],
-        voice["id"],
-        json.dumps({"seed": request.seed}),
-        request.episode_id,
-        request.block_id,
-    )
+    try:
+        store.create_job(
+            tid,
+            request.text,
+            voice["name"],
+            voice["id"],
+            json.dumps({"seed": request.seed}),
+            request.episode_id,
+            request.block_id,
+        )
+    except store.EpisodeUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
     with app.state.lock:
         app.state.pending[tid] = event
     app.state.worker.submit(render, tid, request, voice, event)
@@ -292,8 +296,24 @@ def create_episode(request: EpisodeRequest):
 
 
 @app.get("/episodes")
-def list_episodes():
-    return {"items": episodes.list_all()}
+def list_episodes(state: Literal["active", "archived", "trashed"] = "active"):
+    return {"items": episodes.list_all(state), "counts": episodes.counts()}
+
+
+class LifecycleRequest(BaseModel):
+    action: Literal["archive", "trash", "restore"]
+    revision: int = Field(ge=1)
+
+
+@app.post("/episodes/{eid}/lifecycle")
+def manage_episode(eid: str, request: LifecycleRequest):
+    try:
+        result = episodes.change_lifecycle(eid, request.action, request.revision)
+    except episodes.Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not result:
+        raise HTTPException(404, "Episode not found")
+    return result
 
 
 @app.get("/episodes/{eid}")
@@ -489,6 +509,8 @@ async def create_export(
                 )
         app.state.export_worker.submit(episode_export.render, job["id"])
         return exports.public(exports.get(job["id"]))
+    except store.EpisodeUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
     except (ValueError, OSError) as exc:
         raise HTTPException(422, str(exc)) from exc
 

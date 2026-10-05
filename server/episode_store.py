@@ -24,6 +24,8 @@ def init_episodes():
         for name, definition in (
             ("revision", "INTEGER NOT NULL DEFAULT 1"),
             ("gap_secs", "REAL NOT NULL DEFAULT 0.25"),
+            ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
+            ("trash_previous", "TEXT"),
         ):
             if name not in columns:
                 conn.execute(f"ALTER TABLE episodes ADD COLUMN {name} {definition}")
@@ -59,12 +61,12 @@ def create(title, blocks, gap_secs=0.25):
     return get(eid)
 
 
-def get(eid):
+def get(eid, include_trashed=False):
     with store._connect() as conn:
         # One read transaction keeps the script and take selection consistent.
         conn.execute("BEGIN")
         episode = conn.execute("SELECT * FROM episodes WHERE id=?", (eid,)).fetchone()
-        if not episode:
+        if not episode or (episode["lifecycle"] == "trashed" and not include_trashed):
             return None
         blocks = conn.execute(
             "SELECT * FROM script_blocks WHERE episode_id=? ORDER BY position", (eid,)
@@ -90,23 +92,77 @@ def get(eid):
     return result
 
 
-def list_all():
+def list_all(state="active"):
+    if state not in ("active", "archived", "trashed"):
+        raise ValueError("Unknown episode state")
     with store._connect() as conn:
         rows = conn.execute(
-            "SELECT e.*,COUNT(b.id) AS block_count FROM episodes e LEFT JOIN script_blocks b ON e.id=b.episode_id GROUP BY e.id ORDER BY e.updated_at DESC"
+            "SELECT e.*,COUNT(b.id) AS block_count FROM episodes e LEFT JOIN script_blocks b ON e.id=b.episode_id WHERE e.lifecycle=? GROUP BY e.id ORDER BY e.updated_at DESC",
+            (state,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def counts():
+    result = dict.fromkeys(("active", "archived", "trashed"), 0)
+    with store._connect() as conn:
+        result.update(
+            dict(conn.execute("SELECT lifecycle,COUNT(*) FROM episodes GROUP BY lifecycle"))
+        )
+    return result
+
+
+def change_lifecycle(eid, action, revision):
+    """Organize episodes without discarding scripts, selections or audio assets."""
+    with store._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        episode = conn.execute("SELECT * FROM episodes WHERE id=?", (eid,)).fetchone()
+        if not episode:
+            return None
+        if episode["revision"] != revision:
+            raise Conflict("Episode changed elsewhere. Reload before managing it.")
+        previous = episode["trash_previous"]
+        state = episode["lifecycle"]
+        if action == "archive" and state == "active":
+            target = "archived"
+        elif action == "trash" and state in ("active", "archived"):
+            if (
+                conn.execute(
+                    "SELECT 1 FROM generations WHERE episode_id=? AND status IN ('queued','generating')",
+                    (eid,),
+                ).fetchone()
+                or conn.execute(
+                    "SELECT 1 FROM exports WHERE episode_id=? AND status IN ('queued','running')",
+                    (eid,),
+                ).fetchone()
+            ):
+                raise Conflict("Wait for generation and export to finish before moving to Trash.")
+            target, previous = "trashed", state
+        elif action == "restore" and state in ("archived", "trashed"):
+            target = previous or "active" if state == "trashed" else "active"
+            previous = None
+        else:
+            raise Conflict("This action is unavailable for the episode's current state.")
+        conn.execute(
+            "UPDATE episodes SET lifecycle=?,trash_previous=?,revision=revision+1,updated_at=? WHERE id=?",
+            (target, previous, datetime.now(UTC).isoformat(), eid),
+        )
+    return get(eid, include_trashed=True)
 
 
 def update(eid, title, blocks, revision, gap_secs=0.25):
     now = datetime.now(UTC).isoformat()
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        episode = conn.execute("SELECT revision FROM episodes WHERE id=?", (eid,)).fetchone()
+        episode = conn.execute(
+            "SELECT revision,lifecycle FROM episodes WHERE id=?", (eid,)
+        ).fetchone()
         if not episode:
             return None
         if episode[0] != revision:
             raise Conflict("Episode changed elsewhere. Reload before saving.")
+        if episode["lifecycle"] == "trashed":
+            raise Conflict("Restore this episode from Trash before editing.")
         owned = {
             row[0]: row[1]
             for row in conn.execute(
@@ -138,8 +194,10 @@ def update(eid, title, blocks, revision, gap_secs=0.25):
 def select(eid, bid, tid, revision):
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        episode = conn.execute("SELECT revision FROM episodes WHERE id=?", (eid,)).fetchone()
-        if not episode or episode[0] != revision:
+        episode = conn.execute(
+            "SELECT revision,lifecycle FROM episodes WHERE id=?", (eid,)
+        ).fetchone()
+        if not episode or episode[0] != revision or episode["lifecycle"] == "trashed":
             raise Conflict("Episode changed elsewhere. Reload before selecting a take.")
         take = conn.execute(
             "SELECT status FROM generations WHERE id=? AND episode_id=? AND block_id=?",

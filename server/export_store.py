@@ -24,6 +24,8 @@ def root(eid):
 def create(episode, options):
     eid = "export_" + uuid.uuid4().hex
     with store._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        store.require_available_episode(conn, episode["id"])
         conn.execute(
             "INSERT INTO exports (id,episode_id,created_at,status,stage,progress,snapshot_json,options_json) VALUES (?,?,?,'queued','Queued',0,?,?)",
             (

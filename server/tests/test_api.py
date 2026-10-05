@@ -92,6 +92,96 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         return response.json()["id"]
 
+    def new_episode(self):
+        response = self.client.post(
+            "/episodes",
+            json={
+                "title": "Lifecycle test",
+                "blocks": [{"speaker": "Host", "voice_id": self.voice, "text": "Hello"}],
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()
+
+    def manage(self, episode, action):
+        return self.client.post(
+            f"/episodes/{episode['id']}/lifecycle",
+            json={"action": action, "revision": episode["revision"]},
+        )
+
+    def test_archive_trash_restore_preserves_script_takes_and_voices(self):
+        FakeAdapter.release.set()
+        episode = self.new_episode()
+        eid, bid = episode["id"], episode["blocks"][0]["id"]
+        tid = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        take = self.wait(tid, "complete")
+        original_audio = Path(take["audio_path"]).read_bytes()
+        episode = self.client.get(f"/episodes/{eid}").json()
+        archived = self.manage(episode, "archive")
+        self.assertEqual(archived.status_code, 200)
+        archived = archived.json()
+        self.assertEqual(self.client.get("/episodes").json()["items"], [])
+        self.assertEqual(self.client.get("/episodes?state=archived").json()["items"][0]["id"], eid)
+        self.assertEqual(self.manage(episode, "trash").status_code, 409)
+        trashed = self.manage(archived, "trash").json()
+        self.assertEqual(trashed["lifecycle"], "trashed")
+        self.assertEqual(self.client.get(f"/episodes/{eid}").status_code, 404)
+        self.assertEqual(self.client.get("/takes").json()["items"], [])
+        self.assertEqual(self.client.put(f"/episodes/{eid}", json=trashed).status_code, 409)
+        self.assertEqual(
+            self.client.get("/episodes?state=trashed").json()["counts"],
+            {"active": 0, "archived": 0, "trashed": 1},
+        )
+        restored = self.manage(trashed, "restore").json()
+        self.assertEqual(restored["lifecycle"], "archived")
+        self.assertEqual(restored["blocks"], archived["blocks"])
+        self.assertEqual(Path(take["audio_path"]).read_bytes(), original_audio)
+        self.assertIsNotNone(voice_store.get_voice(self.voice))
+        self.assertEqual(len(self.client.get("/takes").json()["items"]), 1)
+        active = self.manage(restored, "restore").json()
+        self.assertEqual(active["lifecycle"], "active")
+
+    def test_trash_blocks_work_and_rejects_late_generation_and_export(self):
+        episode = self.new_episode()
+        eid, bid = episode["id"], episode["blocks"][0]["id"]
+        store.create_job("take_busy", "Hello", "Host", self.voice, "{}", eid, bid)
+        self.assertEqual(self.manage(episode, "trash").status_code, 409)
+        store.cancel_job("take_busy")
+        export = server.exports.create(episode, {"format": "wav"})
+        self.assertEqual(self.manage(episode, "trash").status_code, 409)
+        server.exports.update(export["id"], status="complete")
+        trashed = self.manage(episode, "trash")
+        self.assertEqual(trashed.status_code, 200)
+        with self.assertRaises(store.EpisodeUnavailable):
+            store.create_job("take_late", "Hello", "Host", self.voice, "{}", eid, bid)
+        with self.assertRaises(store.EpisodeUnavailable):
+            server.exports.create(episode, {"format": "wav"})
+        self.assertIsNone(store.get_job("take_late"))
+        self.assertIsNotNone(server.exports.get(export["id"]))
+        restored = self.manage(trashed.json(), "restore").json()
+        self.assertEqual(restored["lifecycle"], "active")
+        self.assertEqual(self.client.get(f"/episodes/{eid}/exports").status_code, 200)
+        self.assertEqual(self.client.get("/episodes?state=unknown").status_code, 422)
+
+    def test_episode_lifecycle_migration_preserves_existing_library(self):
+        # Recreate the pre-management episode schema inside this test's temporary database.
+        with store._connect() as conn:
+            conn.execute("DROP TABLE script_blocks")
+            conn.execute("DROP TABLE episodes")
+            conn.execute(
+                "CREATE TABLE episodes (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,gap_secs REAL NOT NULL DEFAULT 0.25)"
+            )
+            conn.execute(
+                "INSERT INTO episodes (id,title,created_at,updated_at,revision) VALUES ('episode_old','Existing episode','2026-10-04','2026-10-04',7)"
+            )
+        server.episodes.init_episodes()
+        server.episodes.init_episodes()
+        episode = self.client.get("/episodes/episode_old").json()
+        self.assertEqual(episode["title"], "Existing episode")
+        self.assertEqual(episode["revision"], 7)
+        self.assertEqual(episode["lifecycle"], "active")
+        self.assertEqual(len(self.client.get("/episodes").json()["items"]), 1)
+
     def wait(self, tid, status):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:

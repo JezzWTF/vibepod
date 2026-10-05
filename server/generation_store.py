@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS generations (
 """
 
 
+class EpisodeUnavailable(ValueError):
+    pass
+
+
+def require_available_episode(conn, episode_id):
+    row = conn.execute("SELECT lifecycle FROM episodes WHERE id=?", (episode_id,)).fetchone()
+    if not row or row["lifecycle"] == "trashed":
+        raise EpisodeUnavailable("Restore the episode from Trash before generating or exporting.")
+
+
 @contextmanager
 def _connect():
     conn = sqlite3.connect(str(DB_PATH))
@@ -88,6 +98,9 @@ def create_job(
     model_id="Qwen3-TTS-12Hz-1.7B-Base",
 ):
     with _connect() as conn:
+        if episode_id:
+            conn.execute("BEGIN IMMEDIATE")
+            require_available_episode(conn, episode_id)
         conn.execute(
             "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json,episode_id,block_id) VALUES (?,?,'queued',?,?,0,?,?,?,?,?)",
             (
@@ -184,8 +197,16 @@ def fail_job(job_id: str, error_message: str) -> None:
 
 def list_jobs(limit: int = 50, offset: int = 0) -> list[dict]:
     with _connect() as conn:
+        has_episodes = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='episodes'"
+        ).fetchone()
+        visible = (
+            "WHERE NOT EXISTS (SELECT 1 FROM episodes e WHERE e.id=generations.episode_id AND e.lifecycle='trashed')"
+            if has_episodes
+            else ""
+        )
         rows = conn.execute(
-            "SELECT * FROM generations ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM generations {visible} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
     return [dict(row) for row in rows]
