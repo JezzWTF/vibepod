@@ -22,6 +22,7 @@ import generation_store as store
 import voice_store as voices
 from episode_audio import assemble
 from ids import take_id
+from line_split import synthesize_line
 from model_adapter import Cancelled, QwenAdapter
 from script_agent import jobs as script_jobs
 from script_agent.api import router as script_router
@@ -170,8 +171,8 @@ def render(tid, request, voice, event):
             return
         store.start_job(tid)
         progress = progress_reporter(tid)
-        audio = app.state.adapter.synthesize(
-            request.text, voice, {"seed": request.seed}, event, progress
+        audio = synthesize_line(
+            app.state.adapter, request.text, voice, request.seed, event, progress
         )
         if event.is_set():
             raise Cancelled()
