@@ -19,7 +19,7 @@ See [Windows setup and development](docs/windows-development.md) for prerequisit
 
 Open http://localhost:3000. Create an episode and paste a script as `Speaker: line`, one block per line, or write blocks directly. Add a voice by uploading a clean 3–30 second WAV, or describe a voice, audition its designed preview and save it. Assign the saved voices to the cast and generate the episode. The first generation loads/downloads the pinned public checkpoint and can take several minutes; models run locally thereafter. An optional reference transcript enables transcript-assisted cloning.
 
-Each regeneration adds an immutable take. Audition alternatives in the inspector and select the one to use. Text or voice changes mark earlier selections stale; Generate missing includes stale blocks. Autosave retains the script, cast, gaps and selection. The transport previews ready selected takes in script order, keeping the gaps between them and reporting how many unfinished lines are skipped. Start from any ready selected block without exporting or waiting for the whole episode. Finishing more takes does not interrupt a playing preview; pause or finish playback to refresh it. Library reopens episodes and keeps standalone audio accessible.
+Each regeneration adds an immutable take. Audition alternatives in the inspector and select the one to use. Text or voice changes mark earlier selections stale; Generate missing includes stale blocks. Autosave retains the script, cast, gaps and selection. The transport previews ready selected takes in script order, keeping the gaps between them and reporting how many unfinished lines are skipped. Start from any ready selected block without exporting or waiting for the whole episode. Finishing more takes does not interrupt a playing preview; pause or finish playback to refresh it. Library reopens episodes and keeps standalone audio accessible. Episodes can be archived to keep Active focused, or moved to Trash and restored; nothing is erased automatically, and Trash blocks editing, generation and export until restored.
 
 Install FFmpeg on PATH for export. Choose MP3 (192 kbps) or WAV (24-bit/48 kHz), add title/show/episode metadata and optional square JPG/PNG cover art for MP3. Background exports capture the selected takes and gaps when started, normalize mono speech to −19 LUFS, and verify encoded loudness within ±1 LU and true peak below −1 dB before exposing a download. Finished exports remain listed against the episode after reopening. A restart explicitly fails unfinished work; completed files remain available.
 
@@ -40,7 +40,7 @@ One worker serializes GPU work. Cancellation stops decoding and prevents publish
 
 Only `server/model_adapter.py` imports the model runtime. Its `synthesize(text, voice, settings)` returns audio; `design` creates a reusable reference with VoiceDesign, unloading Base first to stay within VRAM. GPU work is serialized separately from the CPU export worker.
 
-Episode endpoints include `GET/POST /episodes`, `GET/PUT /episodes/{id}`, block `generate` and `select`, episode `generate?mode=all|missing|stale`, `cancel`, `audio`, and `exports`. Episode saves require the current revision and reject competing edits with 409. Design endpoints are `POST /voices/design` and `/voices/design/save`. Export creation uses multipart fields `format`, `title`, `show`, optional `number` and `artwork`; completed files are at `/episodes/{id}/exports/{exportId}/download`.
+Episode endpoints include `GET/POST /episodes` (`GET ?state=active|archived|trashed` also returns per-state `counts`), `GET/PUT /episodes/{id}`, `POST /episodes/{id}/lifecycle` (`{ "action": "archive|trash|restore", "revision": n }`), block `generate` and `select`, episode `generate?mode=all|missing|stale`, `cancel`, `audio`, and `exports`. Episode saves require the current revision and reject competing edits with 409. Design endpoints are `POST /voices/design` and `/voices/design/save`. Export creation uses multipart fields `format`, `title`, `show`, optional `number` and `artwork`; completed files are at `/episodes/{id}/exports/{exportId}/download`.
 
 To verify a production build while a development preview is running, set `$env:VIBEPOD_CHECK_BUILD='1'` before `pnpm build`. This uses the separate ignored `web/.next-check` directory; normal builds and starts still use `.next`.
 
@@ -49,6 +49,7 @@ To verify a production build while a development preview is running, set `$env:V
 ```powershell
 pnpm build
 pnpm test:launcher
+pnpm test:desktop
 pnpm exec prettier --check .
 $config = Get-Content .vibepod/config.json -Raw | ConvertFrom-Json
 cd server

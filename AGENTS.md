@@ -8,6 +8,10 @@ Manage Python dependencies with uv; never pip directly. Torch and torchaudio 2.8
 
 Only `model_adapter.py` imports Qwen/torch/transformers. Keep GPU work on the serialized worker. Keep queued jobs durable, cancellation races safe, and old Phase 1 database records readable. Store user data under ignored `data/`; never commit references or generated WAVs.
 
-Read README.md and docs/studio-build-plan.md for scope and setup. Run Ruff, meaningful API/store tests, Next production build, and formatting checks for changes. Do not claim GPU validation from fake-adapter tests.
+Read README.md and docs/studio-build-plan.md for scope and setup. Run Ruff, meaningful API/store tests, `pnpm test:launcher`, `pnpm test:desktop`, Next production build, and formatting checks for changes. Do not claim GPU validation from fake-adapter tests.
+
+The Electron desktop host lives in `desktop/` (see docs/desktop-installation.md); it bundles the standalone Studio and provisions its own locked Python runtime. Keep its setup, repair and process-ownership behavior covered by `pnpm test:desktop`.
+
+Episodes have a lifecycle (`active`, `archived`, `trashed`). Trashed episodes reject edits, selection, generation and export; archive/trash/restore change nothing else, so scripts, takes and exports always survive.
 
 Commit messages need a title and a description of changes.
