@@ -5,6 +5,7 @@ const { spawn } = require("node:child_process");
 const { createInterface } = require("node:readline");
 const { createHash, randomUUID } = require("node:crypto");
 const net = require("node:net");
+const { watchRuntimeActivity } = require("./runtime-activity.cjs");
 
 const MODELS = [
   ["Base", "fd4b254389122332181a7c3db7f27e918eec64e3", "qwen-base"],
@@ -141,6 +142,7 @@ class DesktopController {
   }
   async execute(command, args, options = {}, onLine = () => {}) {
     if (this.runner) return this.runner(command, args, options, onLine);
+    this.log(`Starting ${path.basename(command)} ${args[0] || ""}`);
     const child = spawn(command, args, {
       ...options,
       shell: false,
@@ -153,7 +155,7 @@ class DesktopController {
       let output = "";
       for (const stream of [child.stdout, child.stderr])
         createInterface({ input: stream }).on("line", (line) => {
-          output += line + "\n";
+          output = (output + line + "\n").slice(-128 * 1024);
           this.log(line);
           onLine(line);
         });
@@ -161,6 +163,7 @@ class DesktopController {
       child.once("close", (code) => {
         this.children = this.children.filter((c) => c !== child);
         if (this.operation === child) this.operation = null;
+        this.log(`${path.basename(command)} exited (${code})`);
         if (code === 0) resolve(output);
         else reject(new Error(output.trim().slice(-1200) || `Process exited (${code})`));
       });
@@ -297,12 +300,42 @@ class DesktopController {
       atomicJson(this.pendingFile, { python: this.devConfig.python, manifestHash: hash });
       return this.devConfig.python;
     }
-    await this.execute(
-      path.join(this.resources, "bin/uv.exe"),
-      ["sync", "--frozen", "--no-dev", "--managed-python", "--python", "3.12.9"],
-      { cwd: path.join(this.resources, "server"), env }
+    this.emit({ stage: "Preparing Python and GPU packages", engineActivity: null });
+    const stopActivity = watchRuntimeActivity(
+      [env.UV_PYTHON_INSTALL_DIR, env.UV_CACHE_DIR, candidate],
+      (activity) => this.emit({ engineActivity: activity }),
+      1000,
+      (error) => this.log(`Runtime activity watcher: ${error.message}`)
     );
-    this.emit({ stage: "Verifying voice engine" });
+    try {
+      await this.execute(
+        path.join(this.resources, "bin/uv.exe"),
+        [
+          "sync",
+          "--frozen",
+          "--no-dev",
+          "--managed-python",
+          "--python",
+          "3.12.9",
+          "--verbose",
+          "--no-progress",
+          "--color",
+          "never",
+        ],
+        { cwd: path.join(this.resources, "server"), env },
+        (line) => {
+          const readable = line.replace(/^DEBUG\s+/, "").trim();
+          if (
+            /^(Downloading|Downloaded|Preparing|Prepared|Installing|Installed)\b/.test(readable) &&
+            !/https?:\/\//.test(readable)
+          )
+            this.emit({ stage: readable.slice(0, 160) });
+        }
+      );
+    } finally {
+      stopActivity();
+    }
+    this.emit({ stage: "Verifying voice engine", engineActivity: null });
     await this.execute(python, ["doctor.py"], { cwd: path.join(this.resources, "server"), env });
     this.emit({ engineVerified: true });
     atomicJson(this.pendingFile, { python, manifestHash: hash });

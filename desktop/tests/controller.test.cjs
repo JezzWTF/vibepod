@@ -206,3 +206,18 @@ test("interrupted first setup retains chosen storage after application restart",
     clean(root);
   }
 });
+
+test("silent subprocesses still leave persistent start and exit records", async () => {
+  const { root, resources } = fixture();
+  try {
+    const c = new DesktopController({ root, resources });
+    const output = await c.execute(process.execPath, ["-e", "process.exit(0)"]);
+    assert.equal(output, "");
+    const log = fs.readFileSync(path.join(root, "logs/desktop.log"), "utf8");
+    assert.match(log, /Starting .* -e/);
+    assert.match(log, /exited \(0\)/);
+    assert.equal(c.children.length, 0);
+  } finally {
+    clean(root);
+  }
+});

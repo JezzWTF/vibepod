@@ -79,6 +79,10 @@ function render(state) {
   jobs[0].querySelector(".mark").textContent = state.engineVerified ? "✓" : "01";
   jobs[0].querySelector(".job-head span:last-child").textContent =
     state.component === "engine" ? "Working" : state.engineVerified ? "Verified" : "Waiting";
+  jobs[0].querySelector(".detail").textContent =
+    state.component === "engine" && state.engineActivity
+      ? `Preparing ${state.engineActivity.component} · ${state.engineActivity.file}`
+      : "Managed by VibePod";
   $("base-job").className = state.component === "Base" ? "job active" : "job";
   $("design-job").className = state.component === "VoiceDesign" ? "job active" : "job";
   $("download-title").textContent = "Core voice model";

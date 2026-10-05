@@ -12,6 +12,8 @@ The host starts two loopback services on available ports and opens the Studio af
 
 ## Storage and recovery
 
+Engine setup reports dependency preparation and actual runtime file activity in the existing engine row. It records subprocess starts/exits and verbose dependency diagnostics in the persistent log. File activity is not a download percentage; no overall engine percentage is invented.
+
 Runtime metadata, logs, Python and dependency caches live under Electron's user-data folder in `installation/`. Models and the complete library live at the selected locations, outside the runtime. `VIBEPOD_DATA_DIR` directs all backend stores to that library. Back up the whole library folder, including its database and audio. Existing repository data is not automatically imported or moved.
 
 Recovery distinguishes graphics-driver issues, model downloads, voice-engine dependencies and Studio application startup. Engine repair builds and verifies a new environment before changing the active pointer, retaining the previous runtime. It preserves models, episodes, voices and audio. Model recovery reuses verified files and partial downloads. Application-file failures offer logs and reinstall guidance. Uninstall does not delete the selected model or library folders.

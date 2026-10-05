@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { DesktopController } = require("./controller.cjs");
 let window,
@@ -8,6 +9,12 @@ let window,
   quitting = false,
   studioOrigin = null;
 const ui = path.join(__dirname, "../ui/index.html");
+const smoke = process.argv.some((arg) => arg.startsWith("--smoke-"));
+if (smoke) {
+  const smokeRoot = path.join(app.getPath("temp"), `vibepod-desktop-smoke-${randomUUID()}`);
+  fs.mkdirSync(smokeRoot, { recursive: true });
+  app.setPath("userData", smokeRoot);
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => {
@@ -34,6 +41,7 @@ else {
             .replace(/^\uFEFF/, "")
         );
       window = new BrowserWindow({
+        show: !smoke,
         width: 1060,
         height: 870,
         minWidth: 800,
@@ -119,6 +127,34 @@ else {
         return;
       }
       await controller.check();
+      if (process.argv.includes("--smoke-child-output")) {
+        const output = await controller.execute(
+          process.execPath,
+          ["-e", "console.log('child-stdout'); console.error('child-stderr')"],
+          {
+            env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+          }
+        );
+        if (!output.includes("child-stdout") || !output.includes("child-stderr"))
+          throw new Error("Desktop subprocess output was not captured.");
+        const python = process.env.VIBEPOD_SMOKE_PYTHON || devConfig?.python;
+        if (python) {
+          const pythonOutput = await controller.execute(
+            python,
+            [
+              "-u",
+              "-c",
+              "import sys; print('python-stdout'); print('python-stderr', file=sys.stderr)",
+            ],
+            { env: controller.environment() }
+          );
+          if (!pythonOutput.includes("python-stdout") || !pythonOutput.includes("python-stderr"))
+            throw new Error("Desktop Python subprocess output was not captured.");
+        }
+        console.log(JSON.stringify({ event: "desktop-child-output", output }));
+        app.quit();
+        return;
+      }
       if (process.argv.includes("--smoke-test")) {
         const loaded = await window.webContents.executeJavaScript(
           "window.vibepod.state().then(state => ({title: document.title, view: state.view}))"
