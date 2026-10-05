@@ -221,3 +221,15 @@ test("silent subprocesses still leave persistent start and exit records", async 
     clean(root);
   }
 });
+test("graphics cards with 8 GB or more are accepted and smaller ones are refused", async () => {
+  const { root, resources } = fixture();
+  try {
+    const gpu = (mib) =>
+      new DesktopController({ root, resources, runner: async () => `NVIDIA GPU, ${mib}, 600.1` });
+    assert.equal((await gpu(8188).device()).vram.toFixed(1), "8.0");
+    assert.equal((await gpu(12282).device()).name, "NVIDIA GPU");
+    await assert.rejects(() => gpu(6144).device(), /at least 8 GB VRAM/);
+  } finally {
+    clean(root);
+  }
+});

@@ -15,7 +15,7 @@ Install a current NVIDIA driver, Git, and Microsoft App Installer (`winget`). Fr
 pnpm dev
 ```
 
-Setup installs the required tools, locked dependencies and pinned model checkpoints, then checks CUDA and audio encoders. The verified target is RTX 4070 12 GB with Python 3.12.9 and torch/torchaudio 2.8.0 CUDA 12.8. SDPA is the default; Flash Attention is optional. Ordinary startup installs nothing, manages both services, and hides routine request logs. Ctrl+C stops both owned service trees. Use `pnpm run doctor` for installation checks.
+Setup installs the required tools, locked dependencies and pinned model checkpoints, then checks CUDA and audio encoders. Any NVIDIA GPU with 8 GB or more VRAM is accepted; the verified target is RTX 4070 12 GB, and the models need about 5 GB while generating, so 8 GB cards should work with other GPU-heavy applications closed but are untested. Python 3.12.9 and torch/torchaudio 2.8.0 CUDA 12.8. SDPA is the default; Flash Attention is optional. Ordinary startup installs nothing, manages both services, and hides routine request logs. Ctrl+C stops both owned service trees. Use `pnpm run doctor` for installation checks.
 
 See [Windows setup and development](docs/windows-development.md) for prerequisites, custom paths/ports, interrupted downloads and troubleshooting. Setup/start have been tested on the current Windows machine; a clean Windows installation test is deferred.
 

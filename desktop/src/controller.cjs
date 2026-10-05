@@ -198,8 +198,8 @@ class DesktopController {
       .split(",")
       .map((s) => s.trim());
     const vram = Number(memory) / 1024;
-    if (!Number.isFinite(vram) || vram < 11)
-      throw new Error("A supported NVIDIA GPU with at least 12 GB VRAM is required.");
+    if (!Number.isFinite(vram) || vram < 7.5)
+      throw new Error("A supported NVIDIA GPU with at least 8 GB VRAM is required.");
     return { name, vram, driver };
   }
   async check() {

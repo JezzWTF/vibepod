@@ -116,12 +116,15 @@ svg {
 }
 .shell {
   max-width: 1040px;
-  margin: 0 auto 32px;
+  min-height: 100dvh;
+  margin: 0 auto;
   border: 1px solid #383d43;
   border-radius: 10px;
   overflow: hidden;
   background: var(--bg);
   box-shadow: 0 24px 75px #0005;
+  display: flex;
+  flex-direction: column;
 }
 .chrome {
   height: 58px;
@@ -156,6 +159,7 @@ svg {
   display: grid;
   grid-template-columns: 210px 1fr;
   min-height: 680px;
+  flex: 1;
 }
 .rail {
   border-right: 1px solid var(--line);
@@ -612,7 +616,7 @@ dialog p {
     margin-top: 16px;
   }
   .shell {
-    margin: 0 12px 20px;
+    margin: 0 12px;
   }
   .workspace {
     grid-template-columns: 1fr;

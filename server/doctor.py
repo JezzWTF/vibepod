@@ -13,8 +13,8 @@ def main():
     info = runtime_info()
     print(f"[check] {info['name']}: {info['vram_gb']:.1f} GB VRAM")
     print(f"[check] Python {sys.version.split()[0]}, torch {info['torch']}, CUDA {info['cuda']}")
-    if info["vram_gb"] < 11:
-        raise RuntimeError("Supported target: NVIDIA GPU with at least 12 GB VRAM")
+    if info["vram_gb"] < 7.5:
+        raise RuntimeError("Supported target: NVIDIA GPU with at least 8 GB VRAM")
     for name in ("ffmpeg", "ffprobe"):
         if not shutil.which(name):
             raise RuntimeError(

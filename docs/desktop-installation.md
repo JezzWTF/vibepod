@@ -4,7 +4,7 @@ The desktop host retains the Next Studio and Python voice engine and gives end u
 
 ## Installing (end users)
 
-Run `VibePod Setup <version>.exe`. Nothing else needs installing first except a supported NVIDIA GPU (12 GB VRAM) and a current graphics driver. The installer bundles Electron's Node runtime, the production Studio frontend, uv, FFmpeg and FFprobe; system Python, Node, Git, pnpm and developer terminals are not required, and `setup.ps1` is not part of this path. The Python/CUDA engine and the models are downloaded by the application on first launch.
+Run `VibePod Setup <version>.exe`. Nothing else needs installing first except an NVIDIA GPU with at least 8 GB VRAM and a current graphics driver. The installer bundles Electron's Node runtime, the production Studio frontend, uv, FFmpeg and FFprobe; system Python, Node, Git, pnpm and developer terminals are not required, and `setup.ps1` is not part of this path. The Python/CUDA engine and the models are downloaded by the application on first launch.
 
 ## First launch
 

@@ -2,7 +2,7 @@
 
 Two services: Python 3.12.9 FastAPI/Qwen backend on loopback port 8000 (`server/tts_server.py`), Next.js 15 / React 19 frontend on 3000. Browser requests go through Next API proxies.
 
-The supported target is CUDA on an RTX 4070 12 GB. Run root `setup.ps1` on Windows, then `pnpm dev` or root `start.ps1` for both services. The legacy `server/start.ps1` delegates to this supervisor. CPU mode is removed. GPU-free environments can run fake-adapter API tests and build the frontend, but cannot validate inference.
+The supported target is CUDA on an NVIDIA GPU with at least 8 GB VRAM; everything is verified on an RTX 4070 12 GB. Run root `setup.ps1` on Windows, then `pnpm dev` or root `start.ps1` for both services. The legacy `server/start.ps1` delegates to this supervisor. CPU mode is removed. GPU-free environments can run fake-adapter API tests and build the frontend, but cannot validate inference.
 
 Manage Python dependencies with uv; never pip directly. Torch and torchaudio 2.8.0 come from the explicit CUDA 12.8 index. Generate lock changes with `uv lock`; never edit `uv.lock` manually. Setup performs frozen sync into a per-checkout external environment. Startup verifies the lockfile stamp and installs nothing. Set `VIBEPOD_VENV` before setup to choose an external environment.
 
