@@ -1,0 +1,191 @@
+import json
+import sys
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from script_agent import prompts, providers
+from script_agent.formatting import parse
+from script_agent.pipeline import Pipeline, PipelineError
+from script_agent.prompts import Brief
+from script_agent.providers import Cancelled, ClaudeCli, CodexCli, ProviderError, run_process
+
+OUTLINE = {
+    "title": "Tea",
+    "sections": [
+        {"heading": "Origins", "summary": "where tea began", "blocks": 2},
+        {"heading": "Today", "summary": "tea now", "blocks": 2},
+    ],
+}
+SECTION = "Alice: Tea began in China.\nFrank: Really? How long ago?"
+
+
+class FakeProvider:
+    name = "fake"
+
+    def __init__(self, replies=None, web=True):
+        self.supports_web = web
+        self.prompts: list[str] = []
+        self.replies = replies or []
+
+    def run(self, prompt, *, web=False, timeout=600, cancel=None):
+        self.prompts.append(prompt)
+        if cancel and cancel.is_set():
+            raise Cancelled("Cancelled")
+        if self.replies:
+            return self.replies.pop(0)
+        if "Reply with JSON only" in prompt:
+            return "```json\n" + json.dumps(OUTLINE) + "\n```"
+        if "Search the web" in prompt:
+            return "- Tea began in China (https://example.com)"
+        return SECTION
+
+
+class ParseTest(unittest.TestCase):
+    def test_cleans_markup_and_directions(self):
+        blocks, problems = parse(
+            "**Alice:** Hello *there* [laughs] see https://x.io now\nFrank: (pause) Sure.",
+            ["Alice", "Frank"],
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual([b.text for b in blocks], ["Hello there see now", "Sure."])
+
+    def test_reports_unknown_speaker_and_unformatted_lines(self):
+        _, problems = parse("Bob: hi\nno colon here", ["Alice", "Frank"])
+        self.assertEqual(len(problems), 2)
+        self.assertIn("unknown speaker", problems[0])
+
+    def test_long_line_is_a_problem(self):
+        _, problems = parse("Alice: " + "word " * 200, ["Alice"])
+        self.assertIn("split it", problems[0])
+
+    def test_outline_parser_reads_fenced_json(self):
+        data = prompts.parse_outline("Sure!\n```json\n" + json.dumps(OUTLINE) + "\n```")
+        self.assertEqual(data["sections"][0]["blocks"], 2)
+        with self.assertRaises(ValueError):
+            prompts.parse_outline("no json")
+
+
+class PipelineTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name) / "run"
+        self.brief = Brief(topic="Tea", minutes=2)
+
+    def test_full_run_writes_script_and_continues_from_previous_lines(self):
+        provider = FakeProvider()
+        events = []
+        pipe = Pipeline(provider, self.brief, self.dir, progress=lambda *a: events.append(a[0]))
+        title, blocks = pipe.run()
+        self.assertEqual(title, "Tea")
+        self.assertEqual(len(blocks), 4)
+        self.assertEqual((self.dir / "script.txt").read_text().count("\n"), 3)
+        self.assertIn("Tea began in China", provider.prompts[-1])
+        self.assertEqual({"Researching", "Outlining", "Drafting", "Done"}, set(events))
+
+    def test_resume_reuses_finished_stages(self):
+        first = FakeProvider()
+        Pipeline(first, self.brief, self.dir).run()
+        second = FakeProvider()
+        Pipeline(second, self.brief, self.dir).run()
+        self.assertEqual(second.prompts, [])
+
+    def test_failure_keeps_finished_stages_for_resume(self):
+        provider = FakeProvider()
+        pipe = Pipeline(provider, self.brief, self.dir)
+        original = provider.run
+        calls = {"n": 0}
+
+        def flaky(prompt, **kw):
+            calls["n"] += 1
+            if calls["n"] == 4:
+                raise ProviderError("usage limit reached")
+            return original(prompt, **kw)
+
+        provider.run = flaky
+        with self.assertRaises(ProviderError):
+            pipe.run()
+        self.assertTrue((self.dir / "research.md").exists())
+        self.assertTrue((self.dir / "section_01.txt").exists())
+        resumed = FakeProvider()
+        Pipeline(resumed, self.brief, self.dir).run()
+        self.assertEqual(len(resumed.prompts), 1)
+
+    def test_bad_format_is_repaired_once_then_fails(self):
+        provider = FakeProvider(
+            [
+                "Notes",
+                json.dumps(OUTLINE),
+                "Bob: wrong",
+                "Alice: fixed",
+                "still wrong",
+                "still wrong",
+            ]
+        )
+        pipe = Pipeline(provider, self.brief, self.dir)
+        with self.assertRaises(PipelineError) as ctx:
+            pipe.run()
+        self.assertEqual((self.dir / "section_01.txt").read_text(), "Alice: fixed")
+        self.assertIn("Section 2", str(ctx.exception))
+
+    def test_overlong_section_is_condensed_once(self):
+        outline = {"title": "T", "sections": [{"heading": "A", "summary": "s", "blocks": 2}]}
+        long = "\n".join("Alice: " + "word " * 50 for _ in range(4))
+        provider = FakeProvider(["Notes", json.dumps(outline), long, "Alice: Short."])
+        _, blocks = Pipeline(provider, self.brief, self.dir).run()
+        self.assertEqual([b.text for b in blocks], ["Short."])
+        self.assertIn("too long", provider.prompts[-1])
+
+    def test_non_searching_provider_needs_notes(self):
+        with self.assertRaises(PipelineError):
+            Pipeline(FakeProvider(web=False), self.brief, self.dir).run()
+        brief = Brief(topic="Tea", minutes=2, notes="Tea began in China.")
+        Pipeline(FakeProvider(web=False), brief, self.dir / "n").run()
+
+    def test_review_adds_a_pass_per_section(self):
+        provider = FakeProvider()
+        Pipeline(provider, self.brief, self.dir, review=True).run()
+        self.assertEqual(sum("Review this podcast" in p for p in provider.prompts), 2)
+
+    def test_cancel_stops_before_next_call(self):
+        cancel = threading.Event()
+        cancel.set()
+        with self.assertRaises(Cancelled):
+            Pipeline(FakeProvider(), self.brief, self.dir, cancel=cancel).run()
+
+
+class ProcessTest(unittest.TestCase):
+    def test_prompt_goes_through_stdin(self):
+        code, out, _ = run_process(
+            [sys.executable, "-c", "import sys;print(sys.stdin.read())"], "hi", 20, None
+        )
+        self.assertEqual((code, out.strip()), (0, "hi"))
+
+    def test_cancel_and_timeout_stop_the_process(self):
+        sleeper = [sys.executable, "-c", "import time;time.sleep(60)"]
+        cancel = threading.Event()
+        threading.Timer(0.3, cancel.set).start()
+        with self.assertRaises(Cancelled):
+            run_process(sleeper, "", 30, cancel)
+        with self.assertRaisesRegex(ProviderError, "Timed out"):
+            run_process(sleeper, "", 1, None)
+
+    def test_commands_enable_search_only_when_asked(self):
+        with mock.patch.object(providers, "_executable", lambda name: name):
+            claude = ClaudeCli("m")
+            self.assertEqual(claude.command(False)[claude.command(False).index("--tools") + 1], "")
+            self.assertIn("WebSearch", claude.command(True))
+            self.assertEqual(CodexCli().command(True, Path("o"))[1], "--search")
+            self.assertNotIn("--search", CodexCli().command(False, Path("o")))
+
+    def test_missing_cli_is_a_clear_error(self):
+        missing = mock.patch.object(providers.shutil, "which", lambda name: None)
+        with missing, self.assertRaisesRegex(ProviderError, "not installed"):
+            ClaudeCli().run("x")
+
+
+if __name__ == "__main__":
+    unittest.main()
