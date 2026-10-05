@@ -16,6 +16,10 @@ function run(command, args, options = {}) {
     throw new Error(`${command} failed (${result.status}): ${result.error?.message || ""}`);
 }
 if (process.platform !== "win32") throw new Error("This build targets Windows x64.");
+// tsconfig includes every distDir's generated types. Types left by an older checkout's dev server
+// or check build (for example routes that no longer exist) would fail this build's type check.
+for (const stale of [".next", ".next-check"])
+  fs.rmSync(path.join(root, "web", stale, "types"), { recursive: true, force: true });
 if (!process.argv.includes("--skip-web"))
   run("cmd.exe", ["/d", "/s", "/c", "pnpm --filter vibepod-web build"], {
     env: { ...process.env, VIBEPOD_DESKTOP_BUILD: "1" },
