@@ -22,7 +22,7 @@ Changing installed storage locations and automatic application updates are not y
 
 ## Developer build
 
-Run the repository Windows setup first, then:
+Run the repository Windows setup first (`./setup.ps1 -InstallTools`). It installs Node, uv and FFmpeg, which `desktop:prepare` copies from the build machine into the installer; it does not download them. The repository uses pnpm 11, and the build scripts it allows (Electron, its installer tooling and sharp) are listed under `allowBuilds` in `pnpm-workspace.yaml`. Then:
 
 ```powershell
 pnpm desktop:prepare

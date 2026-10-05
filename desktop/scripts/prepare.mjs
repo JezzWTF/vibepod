@@ -117,7 +117,10 @@ function tool(name, override) {
     );
     if (fs.existsSync(actual)) return actual;
   }
-  if (!choices.length) throw new Error(`Missing build tool: ${name}`);
+  if (!choices.length)
+    throw new Error(
+      `Missing build tool: ${name}. It is bundled from this machine, not downloaded. Run ./setup.ps1 -InstallTools, or set VIBEPOD_${name.toUpperCase()}_BINARY to its real executable.`
+    );
   return choices[0];
 }
 const binaries = {

@@ -21,11 +21,11 @@ try {
     node -e "if (Number(process.versions.node.split('.')[0]) < 22) process.exit(1)"
     if ($LASTEXITCODE -ne 0) { throw 'Node.js 22 or newer is required.' }
     if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-        npm install --global pnpm@10.33.2
+        npm install --global pnpm@11.28.4
         if ($LASTEXITCODE -ne 0) { throw 'pnpm installation failed.' }
     }
     $pnpmVersion = (pnpm --version).Trim()
-    if ($LASTEXITCODE -ne 0 -or $pnpmVersion -ne '10.33.2') { throw 'pnpm 10.33.2 is required. Run npm install --global pnpm@10.33.2, then rerun setup.' }
+    if ($LASTEXITCODE -ne 0 -or $pnpmVersion -notmatch '^11\.') { throw 'pnpm 11 is required. Run npm install --global pnpm@11.28.4, then rerun setup.' }
     $previous = if (Test-Path -LiteralPath '.vibepod/config.json') { Get-Content -Raw -LiteralPath '.vibepod/config.json' | ConvertFrom-Json } else { $null }
     function Resolve-SetupPath($override, $saved, $fallback) {
         $value = if ($override) { $override } elseif ($saved) { $saved } else { $fallback }

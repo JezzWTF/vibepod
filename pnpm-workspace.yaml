@@ -1,5 +1,7 @@
 packages:
   - "web"
   - "desktop"
-onlyBuiltDependencies:
-  - electron
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  sharp: true
