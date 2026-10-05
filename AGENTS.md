@@ -14,4 +14,6 @@ The Electron desktop host lives in `desktop/` (see docs/desktop-installation.md)
 
 Episodes have a lifecycle (`active`, `archived`, `trashed`). Trashed episodes reject edits, selection, generation and export; archive/trash/restore change nothing else, so scripts, takes and exports always survive.
 
+Services started by the desktop or `scripts/dev.mjs` receive `VIBEPOD_PARENT_PID` and exit when that process does (`server/parent_watch.py`, `desktop/src/parent-watch.cjs`). Register any child process the backend starts with `parent_watch.track` so it is killed too.
+
 Commit messages need a title and a description of changes.

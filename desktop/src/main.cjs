@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, clipboard, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { DesktopController } = require("./controller.cjs");
+const { installCrashLogging } = require("./crash-log.cjs");
 let window,
   controller,
   quitting = false,
@@ -94,7 +95,28 @@ else {
           return action(...args);
         });
       }
+      installCrashLogging({
+        app,
+        log: (line) => controller.log(line),
+        notify: () => {
+          if (window && !window.isDestroyed())
+            dialog
+              .showMessageBox(window, {
+                type: "error",
+                message: "VibePod hit a problem.",
+                detail: "The details were written to the desktop log.",
+                buttons: ["Open log folder", "Close"],
+              })
+              .then(({ response }) => {
+                if (response === 0) shell.openPath(path.join(root, "logs"));
+              });
+        },
+      });
       handle("state", () => controller.state);
+      handle("copyLog", () => {
+        clipboard.writeText(controller.scrubbedLog());
+        return true;
+      });
       handle("version", () => `v${app.getVersion()}${app.isPackaged ? "" : " dev"}`);
       handle("folder", async (key) => {
         if (!["models", "library"].includes(key)) throw new Error("Unknown storage location.");

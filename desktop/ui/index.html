@@ -216,6 +216,7 @@
             </div>
             <div class="secondary-actions">
               <button class="quiet" id="show-logs">View full log</button>
+              <button class="quiet" id="copy-log">Copy log</button>
             </div>
           </section>
           <footer class="footer">
@@ -229,7 +230,10 @@
       <h2 id="log-title">Startup log</h2>
       <p id="log-description">Captured application and service output.</p>
       <pre id="full-log"></pre>
-      <form method="dialog" class="buttons"><button class="primary">Close</button></form>
+      <form method="dialog" class="buttons">
+        <button type="button" id="copy-log-dialog">Copy log</button>
+        <button class="primary">Close</button>
+      </form>
     </dialog>
     <script src="renderer.js"></script>
   </body>

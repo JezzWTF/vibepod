@@ -16,6 +16,8 @@ The host starts two loopback services on available ports and opens the Studio af
 
 ## Storage and recovery
 
+If the desktop crashes or is killed, the voice engine and the Studio notice and exit within a few seconds instead of keeping their ports and GPU memory. Application failures, a crashed window or a crashed helper process are written to `logs/desktop.log` in the installation folder, and the app offers to open that folder. **Copy log** on the setup screen copies the last 400 lines with the Windows home folder and user name removed, ready to paste into a bug report.
+
 Engine setup reports dependency preparation and actual runtime file activity in the existing engine row. It records subprocess starts/exits and verbose dependency diagnostics in the persistent log. File activity is not a download percentage; no overall engine percentage is invented.
 
 Runtime metadata, logs, Python and dependency caches live under Electron's user-data folder in `installation/`. Models and the complete library live at the selected locations, outside the runtime. `VIBEPOD_DATA_DIR` directs all backend stores to that library. Back up the whole library folder, including its database and audio. Existing repository data is not automatically imported or moved.

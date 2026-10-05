@@ -213,6 +213,13 @@ if (api) {
   $("retry").onclick = () => action(() => api.retry());
   $("open-studio").onclick = () => action(() => api.start());
   $("review-settings").onclick = () => render({ ...current, view: "setup" });
+  for (const id of ["copy-log", "copy-log-dialog"])
+    $(id).onclick = async () => {
+      const button = $(id);
+      const label = button.textContent;
+      button.textContent = (await api.copyLog().catch(() => false)) ? "Copied" : "Not copied";
+      setTimeout(() => (button.textContent = label), 1500);
+    };
   $("show-logs").onclick = () => {
     $("full-log").textContent = current.logs.join("\n");
     $("log-dialog").showModal();

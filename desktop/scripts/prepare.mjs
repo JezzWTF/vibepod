@@ -3,6 +3,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+const { renameWithRetry } = createRequire(import.meta.url)("../src/fs-retry.cjs");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const destination = path.join(root, "desktop/resources");
 function run(command, args, options = {}) {
@@ -82,11 +84,11 @@ const previousWeb = path.join(destination, `web-previous-${randomUUID()}`);
 const activeWeb = path.join(destination, "web");
 // A running desktop can lock this directory on Windows. Fail without removing
 // its files; only discard the previous generated tree after replacing it.
-if (fs.existsSync(activeWeb)) fs.renameSync(activeWeb, previousWeb);
+if (fs.existsSync(activeWeb)) renameWithRetry(activeWeb, previousWeb);
 try {
-  fs.renameSync(webDestination, activeWeb);
+  renameWithRetry(webDestination, activeWeb);
 } catch (error) {
-  if (fs.existsSync(previousWeb)) fs.renameSync(previousWeb, activeWeb);
+  if (fs.existsSync(previousWeb)) renameWithRetry(previousWeb, activeWeb);
   throw error;
 }
 if (
@@ -111,6 +113,10 @@ fs.copyFileSync(
 );
 fs.mkdirSync(path.join(destination, "helpers"), { recursive: true });
 fs.copyFileSync(path.join(root, "scripts/dev.mjs"), path.join(destination, "helpers/dev.mjs"));
+fs.copyFileSync(
+  path.join(root, "desktop/src/parent-watch.cjs"),
+  path.join(destination, "helpers/parent-watch.cjs")
+);
 function tool(name, override) {
   if (override) return override;
   const result = spawnSync("where.exe", [name], { encoding: "utf8", windowsHide: true });

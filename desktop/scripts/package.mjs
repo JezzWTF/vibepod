@@ -32,3 +32,11 @@ const result = spawnSync(
 );
 console.log(`Desktop build output: ${output}`);
 process.exitCode = result.status ?? 1;
+if (process.exitCode === 0) {
+  const { version } = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const { checkPackage } = require("./check-package.cjs");
+  const problems = checkPackage(output, version, { installer: !process.argv.includes("--dir") });
+  for (const problem of problems) console.error(`Package check: ${problem}`);
+  if (problems.length) process.exitCode = 1;
+  else console.log("Package check: the build output has everything the app needs.");
+}

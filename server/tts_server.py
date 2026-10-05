@@ -19,6 +19,7 @@ import episode_export
 import episode_store as episodes
 import export_store as exports
 import generation_store as store
+import parent_watch
 import voice_store as voices
 from episode_audio import assemble
 from ids import take_id
@@ -35,6 +36,7 @@ async def lifespan(app):
     episodes.init_episodes()
     exports.init_exports()
     script_jobs.init()
+    parent_watch.start()
     app.state.script_worker = ThreadPoolExecutor(max_workers=1)
     app.state.script_cancel = {}
     app.state.adapter = QwenAdapter()

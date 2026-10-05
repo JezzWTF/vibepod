@@ -74,6 +74,8 @@ export function stopChild(child) {
 export function startChild(name, command, args, options = {}) {
   const child = spawn(command, args, {
     ...options,
+    // Lets a service notice that this launcher is gone and exit with it.
+    env: { ...(options.env ?? process.env), VIBEPOD_PARENT_PID: String(process.pid) },
     shell: false,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -105,7 +107,11 @@ export async function main({ directory = root, args = process.argv.slice(2) } = 
     VIBEPOD_DESIGN_MODEL_PATH: config.designModelPath,
     VIBEPOD_SERVER_URL: `http://127.0.0.1:${config.backendPort}`,
     PYTHONUNBUFFERED: "1",
+    PYTHONUTF8: "1",
   };
+  // A developer's own Python settings must not reach the managed interpreter.
+  delete env.PYTHONHOME;
+  delete env.PYTHONPATH;
   // Empty paths allow the adapter's pinned Hub fallback after -SkipModels.
   for (const key of ["VIBEPOD_MODEL_PATH", "VIBEPOD_DESIGN_MODEL_PATH"])
     if (!existsSync(env[key])) delete env[key];

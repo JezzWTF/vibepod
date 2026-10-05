@@ -6,6 +6,8 @@ const { createInterface } = require("node:readline");
 const { createHash, randomUUID } = require("node:crypto");
 const net = require("node:net");
 const { watchRuntimeActivity } = require("./runtime-activity.cjs");
+const { renameWithRetry } = require("./fs-retry.cjs");
+const { scrubLog } = require("./log-scrub.cjs");
 
 const MODELS = [
   ["Base", "fd4b254389122332181a7c3db7f27e918eec64e3", "qwen-base"],
@@ -15,7 +17,7 @@ function atomicJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
   fs.writeFileSync(temporary, JSON.stringify(value, null, 2));
-  fs.renameSync(temporary, file);
+  renameWithRetry(temporary, file);
 }
 function readJson(file) {
   try {
@@ -190,10 +192,11 @@ class DesktopController {
     });
   }
   environment(settings = this.state.settings) {
-    return {
+    const env = {
       ...process.env,
       PATH: path.join(this.resources, "bin") + path.delimiter + process.env.PATH,
       PYTHONUNBUFFERED: "1",
+      PYTHONUTF8: "1",
       HF_HOME: path.join(this.root, "cache/huggingface"),
       UV_CACHE_DIR: path.join(this.root, "cache/uv"),
       UV_PYTHON_INSTALL_DIR: path.join(this.root, "python"),
@@ -202,6 +205,19 @@ class DesktopController {
       VIBEPOD_MODEL_PATH: path.join(settings.models, "qwen-base"),
       VIBEPOD_DESIGN_MODEL_PATH: path.join(settings.models, "qwen-design"),
     };
+    // A developer's own Python settings must not reach the managed interpreter.
+    delete env.PYTHONHOME;
+    delete env.PYTHONPATH;
+    return env;
+  }
+  scrubbedLog(lines = 400) {
+    let text = "";
+    try {
+      text = fs.readFileSync(path.join(this.root, "logs/desktop.log"), "utf8");
+    } catch {
+      text = this.state.logs.join("\n");
+    }
+    return scrubLog(text.split("\n").slice(-lines).join("\n"));
   }
   async device() {
     const exe =
@@ -496,6 +512,7 @@ class DesktopController {
         PORT: String(webPort),
         HOSTNAME: "127.0.0.1",
         VIBEPOD_SERVER_URL: `http://127.0.0.1:${backendPort}`,
+        VIBEPOD_PARENT_PID: String(process.pid),
         ELECTRON_RUN_AS_NODE: "1",
       };
       const start = (name, command, args, cwd) => {
@@ -533,7 +550,11 @@ class DesktopController {
       const web = start(
         "Studio",
         this.node,
-        [path.join(this.resources, "web/server.js")],
+        [
+          "--require",
+          path.join(this.resources, "helpers/parent-watch.cjs"),
+          path.join(this.resources, "web/server.js"),
+        ],
         path.join(this.resources, "web")
       );
       await waitReady(`http://127.0.0.1:${webPort}/api/health`, web);

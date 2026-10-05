@@ -18,6 +18,8 @@ import urllib.request
 from pathlib import Path
 from typing import Protocol
 
+import parent_watch
+
 SCRATCH = Path(tempfile.gettempdir()) / "vibepod-script-agent"
 
 
@@ -43,15 +45,6 @@ class Provider(Protocol):
     ) -> str: ...
 
 
-def _kill_tree(proc: subprocess.Popen) -> None:
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, check=False
-        )
-    else:
-        proc.kill()
-
-
 def run_process(
     args: list[str], prompt: str, timeout: float, cancel: threading.Event | None
 ) -> tuple[int, str, str]:
@@ -67,22 +60,26 @@ def run_process(
         errors="replace",
         cwd=SCRATCH,
     )
+    parent_watch.track(proc)
     deadline = time.monotonic() + timeout
     pending: str | None = prompt
-    while True:
-        try:
-            out, err = proc.communicate(input=pending, timeout=0.5)
-            return proc.returncode, out, err
-        except subprocess.TimeoutExpired:
-            pending = None
-            if cancel and cancel.is_set():
-                _kill_tree(proc)
-                proc.communicate()
-                raise Cancelled("Cancelled") from None
-            if time.monotonic() > deadline:
-                _kill_tree(proc)
-                proc.communicate()
-                raise ProviderError(f"Timed out after {int(timeout)} s") from None
+    try:
+        while True:
+            try:
+                out, err = proc.communicate(input=pending, timeout=0.5)
+                return proc.returncode, out, err
+            except subprocess.TimeoutExpired:
+                pending = None
+                if cancel and cancel.is_set():
+                    parent_watch.kill_tree(proc)
+                    proc.communicate()
+                    raise Cancelled("Cancelled") from None
+                if time.monotonic() > deadline:
+                    parent_watch.kill_tree(proc)
+                    proc.communicate()
+                    raise ProviderError(f"Timed out after {int(timeout)} s") from None
+    finally:
+        parent_watch.untrack(proc)
 
 
 def explain(message: str) -> str:
