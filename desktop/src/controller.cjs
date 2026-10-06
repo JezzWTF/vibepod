@@ -208,10 +208,19 @@ class DesktopController {
       process.platform === "win32"
         ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/nvidia-smi.exe")
         : "nvidia-smi";
-    const text = await this.execute(exe, [
-      "--query-gpu=name,memory.total,driver_version",
-      "--format=csv,noheader,nounits",
-    ]);
+    let text;
+    try {
+      text = await this.execute(exe, [
+        "--query-gpu=name,memory.total,driver_version",
+        "--format=csv,noheader,nounits",
+      ]);
+    } catch (error) {
+      if (error.code === "ENOENT")
+        throw new Error(
+          "The NVIDIA driver utility (nvidia-smi) was not found. Install or repair the NVIDIA driver, then retry."
+        );
+      throw error;
+    }
     const [name, memory, driver] = text
       .trim()
       .split("\n")[0]

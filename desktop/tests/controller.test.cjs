@@ -289,3 +289,22 @@ test("startup checks every model file against the recorded sizes", async () => {
     clean(root);
   }
 });
+test("a missing nvidia-smi is reported as a driver problem, not a raw spawn error", async () => {
+  const { root, resources } = fixture();
+  try {
+    const c = new DesktopController({
+      root,
+      resources,
+      runner: async () => {
+        throw Object.assign(new Error("spawn nvidia-smi ENOENT"), { code: "ENOENT" });
+      },
+    });
+    await c.check();
+    assert.equal(c.state.view, "repair");
+    assert.equal(c.state.error.kind, "driver");
+    assert.match(c.state.error.message, /nvidia-smi\) was not found/);
+    assert.doesNotMatch(c.state.error.message, /spawn/);
+  } finally {
+    clean(root);
+  }
+});
