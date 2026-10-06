@@ -184,7 +184,17 @@ export async function main({ directory = root, args = process.argv.slice(2) } = 
     const web = start(
       "next",
       process.execPath,
-      [next, "dev", "--hostname", "127.0.0.1", "--port", String(config.webPort)],
+      [
+        // Exit with this launcher even if it is force-killed and cannot clean up.
+        "--require",
+        path.join(root, "desktop/src/parent-watch.cjs"),
+        next,
+        "dev",
+        "--hostname",
+        "127.0.0.1",
+        "--port",
+        String(config.webPort),
+      ],
       path.join(directory, "web")
     );
     await waitReady(`http://127.0.0.1:${config.webPort}/api/health`, web);

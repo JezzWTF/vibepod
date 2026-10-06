@@ -73,6 +73,16 @@ def _shorten(sentence: str, limit: int) -> list[str]:
     return result
 
 
+def _is_cjk(char: str) -> bool:
+    code = ord(char)
+    return 0x2E80 <= code <= 0x9FFF or 0xAC00 <= code <= 0xD7AF or 0xFF00 <= code <= 0xFFEF
+
+
+def _gap(before: str, after: str) -> str:
+    """Written Chinese, Japanese and Korean have no spaces between sentences; do not add one."""
+    return "" if _is_cjk(before[-1]) or _is_cjk(after[0]) else " "
+
+
 def split_line(text: str, over: int = SPLIT_OVER_CHARS, limit: int = MAX_PIECE_CHARS) -> list[str]:
     """One piece for a short line; otherwise pieces of at most `limit` characters."""
     text = text.strip()
@@ -81,7 +91,7 @@ def split_line(text: str, over: int = SPLIT_OVER_CHARS, limit: int = MAX_PIECE_C
     pieces, current = [], ""
     for sentence in sentences(text):
         for part in _shorten(sentence, limit):
-            joined = f"{current} {part}".strip() if current else part
+            joined = f"{current}{_gap(current, part)}{part}" if current else part
             if current and len(joined) > limit:
                 pieces.append(current)
                 current = part

@@ -11,8 +11,12 @@ function scrubLog(text, { home = os.homedir(), username = os.userInfo().username
     const forms = new Set([home, home.replaceAll("\\", "/"), home.replaceAll("\\", "\\\\")]);
     for (const form of forms) result = result.replace(new RegExp(escapeRegExp(form), "gi"), "~");
   }
-  if (username && username.length > 2)
-    result = result.replace(new RegExp(`\\b${escapeRegExp(username)}\\b`, "gi"), "<user>");
+  if (username && username.length > 2) {
+    // \b only knows ASCII word characters, so match on Unicode letters, marks and digits instead.
+    const word = "\\p{L}\\p{M}\\p{N}_";
+    const pattern = `(^|[^${word}])${escapeRegExp(username)}(?=$|[^${word}])`;
+    result = result.replace(new RegExp(pattern, "giu"), "$1<user>");
+  }
   return result;
 }
 

@@ -39,6 +39,13 @@ class SplitTest(unittest.TestCase):
         words = "word " * 400
         self.assertTrue(all(len(p) <= MAX_PIECE_CHARS for p in split_line(words)))
 
+    def test_cjk_pieces_keep_the_original_text_with_no_added_spaces(self):
+        text = "这是第一句话。" * 120
+        pieces = split_line(text, over=100, limit=100)
+        self.assertEqual("".join(pieces), text)
+        mixed = "Hello there. " + "你好吗。" * 60
+        self.assertEqual(" ".join(split_line(mixed, over=50, limit=60)).count("  "), 0)
+
     def test_cjk_sentences_split_without_spaces(self):
         text = "这是第一句话。" * 120
         pieces = split_line(text, over=100, limit=100)

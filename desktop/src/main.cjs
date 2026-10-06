@@ -100,7 +100,7 @@ else {
         log: (line) => controller.log(line),
         notify: () => {
           if (window && !window.isDestroyed())
-            dialog
+            return dialog
               .showMessageBox(window, {
                 type: "error",
                 message: "VibePod hit a problem.",
@@ -111,6 +111,12 @@ else {
                 if (response === 0) shell.openPath(path.join(root, "logs"));
               });
         },
+        // Stop the services first so nothing is left running after the app closes.
+        exit: (code) =>
+          controller
+            .stop()
+            .catch(() => {})
+            .finally(() => app.exit(code)),
       });
       handle("state", () => controller.state);
       handle("copyLog", () => {

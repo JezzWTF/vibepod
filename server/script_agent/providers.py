@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -229,13 +230,28 @@ class Ollama:
         worker = threading.Thread(target=call, daemon=True)
         worker.start()
         deadline = time.monotonic() + timeout
+
+        def stop_worker() -> None:
+            # close() alone leaves the worker blocked in getresponse(): the response holds a
+            # reference that defers the real close. Shutdown wakes it on POSIX; Windows only wakes
+            # a blocked read when the handle itself is closed, so close that too. Either way
+            # Ollama sees the disconnect and stops generating.
+            sock = conn.sock
+            if sock is not None:
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+                with contextlib.suppress(OSError):
+                    socket.socket(fileno=sock.detach()).close()
+            conn.close()
+            worker.join(5)
+
         while worker.is_alive():
             worker.join(0.5)
             if cancel and cancel.is_set():
-                conn.close()  # closing the socket also stops Ollama generating
+                stop_worker()
                 raise Cancelled("Cancelled")
             if time.monotonic() > deadline:
-                conn.close()
+                stop_worker()
                 raise ProviderError(f"Timed out after {int(timeout)} s")
         error = box.get("error")
         if isinstance(error, ProviderError):
