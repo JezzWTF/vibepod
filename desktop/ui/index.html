@@ -157,6 +157,18 @@
             </div>
             <p class="status-note" id="download-note" aria-live="polite"></p>
           </section>
+          <section class="view" id="launch" hidden>
+            <p class="overline" id="launch-overline">Opening</p>
+            <h1 tabindex="-1">Opening your Studio.</h1>
+            <p class="intro" aria-live="polite"></p>
+            <canvas
+              class="launch-signal"
+              id="launch-signal"
+              role="img"
+              aria-label="Opening the Studio"
+            ></canvas>
+            <p class="launch-hint">This usually takes a few seconds.</p>
+          </section>
           <section class="view" id="ready" hidden>
             <div class="ready-icon">
               <svg aria-hidden="true"><use href="#check" /></svg>
@@ -236,5 +248,6 @@
       </form>
     </dialog>
     <script src="renderer.js"></script>
+    <script src="threads.js"></script>
   </body>
 </html>
