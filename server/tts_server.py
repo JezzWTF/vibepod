@@ -7,6 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 import soundfile as sf
@@ -215,6 +216,45 @@ def health():
 @app.get("/voices")
 def list_voices():
     return voices.list_voices()
+
+
+@app.get("/voices/usage")
+def voice_usage():
+    return episodes.voice_usage()
+
+
+class VoiceUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    transcript: str = Field(default="", max_length=4000)
+    description: str = Field(default="", max_length=4000)
+
+
+@app.patch("/voices/{voice_id}")
+def update_voice(voice_id: str, request: VoiceUpdate):
+    try:
+        voice = voices.update_voice(voice_id, request.name, request.transcript, request.description)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not voice:
+        raise HTTPException(404, "Voice not found")
+    return voice
+
+
+@app.delete("/voices/{voice_id}")
+def delete_voice(voice_id: str):
+    if not voices.get_voice(voice_id):
+        raise HTTPException(404, "Voice not found")
+    unassigned = episodes.unassign_voice(voice_id)
+    voices.delete_voice(voice_id)
+    return {"deleted": voice_id, "episodes_changed": unassigned}
+
+
+@app.get("/voices/{voice_id}/audio")
+def voice_audio(voice_id: str):
+    voice = voices.get_voice(voice_id)
+    if not voice or not Path(voice["reference"]).is_file():
+        raise HTTPException(404, "Voice reference not found")
+    return FileResponse(voice["reference"], media_type="audio/wav")
 
 
 @app.post("/voices", status_code=201)

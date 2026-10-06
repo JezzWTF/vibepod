@@ -557,6 +557,38 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(job.status_code, 202)
         self.wait(job.json()["id"], "complete")
 
+    def test_voice_is_renamed_and_its_reference_can_be_played(self):
+        response = self.client.patch(
+            f"/voices/{self.voice}",
+            json={"name": "  Lead host ", "transcript": "Hello there", "description": ""},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Lead host")
+        listed = {v["id"]: v for v in self.client.get("/voices").json()}
+        self.assertEqual(listed[self.voice]["transcript"], "Hello there")
+        self.assertEqual(listed[self.voice]["kind"], "clone")
+        self.assertEqual(self.client.get(f"/voices/{self.voice}/audio").status_code, 200)
+        blank = self.client.patch(f"/voices/{self.voice}", json={"name": "   "})
+        self.assertEqual(blank.status_code, 422)
+        missing = self.client.patch("/voices/voice_missing", json={"name": "Nobody"})
+        self.assertEqual(missing.status_code, 404)
+
+    def test_deleting_a_voice_unassigns_blocks_and_keeps_takes(self):
+        episode = self.new_episode()
+        usage = self.client.get("/voices/usage").json()[self.voice]
+        self.assertEqual(usage["blocks"], 1)
+        self.assertEqual(usage["episodes"][0]["id"], episode["id"])
+        response = self.client.delete(f"/voices/{self.voice}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["episodes_changed"], 1)
+        self.assertEqual(self.client.get("/voices").json(), [])
+        self.assertEqual(self.client.get("/voices/usage").json(), {})
+        self.assertEqual(self.client.get(f"/voices/{self.voice}/audio").status_code, 404)
+        reloaded = self.client.get(f"/episodes/{episode['id']}").json()
+        self.assertIsNone(reloaded["blocks"][0]["voice_id"])
+        self.assertEqual(reloaded["revision"], episode["revision"] + 1)
+        self.assertEqual(self.client.delete(f"/voices/{self.voice}").status_code, 404)
+
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg required")
     def test_export_loudness_metadata_artwork_and_download(self):
         from PIL import Image

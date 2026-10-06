@@ -194,6 +194,43 @@ def update(eid, title, blocks, revision, gap_secs=0.25, sources=None):
     return get(eid)
 
 
+def voice_usage():
+    """Map each cast voice to the blocks and episodes that use it."""
+    with store._connect() as conn:
+        rows = conn.execute(
+            "SELECT b.voice_id, e.id, e.title, e.lifecycle FROM script_blocks b "
+            "JOIN episodes e ON e.id=b.episode_id WHERE b.voice_id IS NOT NULL"
+        ).fetchall()
+    usage = {}
+    for voice_id, eid, title, lifecycle in rows:
+        entry = usage.setdefault(voice_id, {"blocks": 0, "episodes": {}})
+        entry["blocks"] += 1
+        entry["episodes"][eid] = {"id": eid, "title": title, "lifecycle": lifecycle}
+    return {
+        voice_id: {"blocks": entry["blocks"], "episodes": list(entry["episodes"].values())}
+        for voice_id, entry in usage.items()
+    }
+
+
+def unassign_voice(voice_id):
+    """Clear a deleted voice from every block. Revisions advance so open editors reload."""
+    now = datetime.now(UTC).isoformat()
+    with store._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        affected = [
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT episode_id FROM script_blocks WHERE voice_id=?", (voice_id,)
+            )
+        ]
+        conn.execute("UPDATE script_blocks SET voice_id=NULL WHERE voice_id=?", (voice_id,))
+        conn.executemany(
+            "UPDATE episodes SET revision=revision+1,updated_at=? WHERE id=?",
+            [(now, eid) for eid in affected],
+        )
+    return len(affected)
+
+
 def select(eid, bid, tid, revision):
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
