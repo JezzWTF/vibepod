@@ -28,14 +28,20 @@ class FakeAdapter:
     entered = threading.Event()
     release = threading.Event()
 
-    def design(self, text, description, cancel):
+    def design(self, text, description, cancel, progress=None):
+        if progress:
+            progress("loading_model")
+            progress("synthesizing", 12)
         self.entered.set()
         self.release.wait(3)
         if cancel.is_set():
             raise Cancelled()
         return Audio(np.sin(np.arange(96000) * 0.03).astype(np.float32) * 0.1, 24000)
 
-    def synthesize(self, text, voice, settings, cancel):
+    def synthesize(self, text, voice, settings, cancel, progress=None):
+        if progress:
+            progress("loading_model")
+            progress("synthesizing", 12)
         self.entered.set()
         self.release.wait(3)
         if cancel.is_set():
@@ -86,13 +92,123 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         return response.json()["id"]
 
+    def new_episode(self):
+        response = self.client.post(
+            "/episodes",
+            json={
+                "title": "Lifecycle test",
+                "blocks": [{"speaker": "Host", "voice_id": self.voice, "text": "Hello"}],
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()
+
+    def manage(self, episode, action):
+        return self.client.post(
+            f"/episodes/{episode['id']}/lifecycle",
+            json={"action": action, "revision": episode["revision"]},
+        )
+
+    def test_archive_trash_restore_preserves_script_takes_and_voices(self):
+        FakeAdapter.release.set()
+        episode = self.new_episode()
+        eid, bid = episode["id"], episode["blocks"][0]["id"]
+        tid = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        take = self.wait(tid, "complete")
+        original_audio = Path(take["audio_path"]).read_bytes()
+        episode = self.client.get(f"/episodes/{eid}").json()
+        archived = self.manage(episode, "archive")
+        self.assertEqual(archived.status_code, 200)
+        archived = archived.json()
+        self.assertEqual(self.client.get("/episodes").json()["items"], [])
+        self.assertEqual(self.client.get("/episodes?state=archived").json()["items"][0]["id"], eid)
+        self.assertEqual(self.manage(episode, "trash").status_code, 409)
+        trashed = self.manage(archived, "trash").json()
+        self.assertEqual(trashed["lifecycle"], "trashed")
+        self.assertEqual(self.client.get(f"/episodes/{eid}").status_code, 404)
+        self.assertEqual(self.client.get("/takes").json()["items"], [])
+        self.assertEqual(self.client.put(f"/episodes/{eid}", json=trashed).status_code, 409)
+        self.assertEqual(
+            self.client.get("/episodes?state=trashed").json()["counts"],
+            {"active": 0, "archived": 0, "trashed": 1},
+        )
+        restored = self.manage(trashed, "restore").json()
+        self.assertEqual(restored["lifecycle"], "archived")
+        self.assertEqual(restored["blocks"], archived["blocks"])
+        self.assertEqual(Path(take["audio_path"]).read_bytes(), original_audio)
+        self.assertIsNotNone(voice_store.get_voice(self.voice))
+        self.assertEqual(len(self.client.get("/takes").json()["items"]), 1)
+        active = self.manage(restored, "restore").json()
+        self.assertEqual(active["lifecycle"], "active")
+
+    def test_takes_of_a_trashed_episode_cannot_be_deleted_until_it_is_restored(self):
+        FakeAdapter.release.set()
+        episode = self.new_episode()
+        eid, bid = episode["id"], episode["blocks"][0]["id"]
+        first = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        self.wait(first, "complete")
+        spare = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        take = self.wait(spare, "complete")
+        episode = self.client.get(f"/episodes/{eid}").json()
+        self.assertNotEqual(episode["blocks"][0]["selected_take_id"], spare)
+        trashed = self.manage(episode, "trash").json()
+        refused = self.client.delete(f"/takes/{spare}")
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn("Trash", refused.json()["detail"])
+        self.assertTrue(Path(take["audio_path"]).exists())
+        self.manage(trashed, "restore")
+        self.assertEqual(self.client.delete(f"/takes/{spare}").status_code, 200)
+        self.assertFalse(Path(take["audio_path"]).exists())
+
+    def test_trash_blocks_work_and_rejects_late_generation_and_export(self):
+        episode = self.new_episode()
+        eid, bid = episode["id"], episode["blocks"][0]["id"]
+        store.create_job("take_busy", "Hello", "Host", self.voice, "{}", eid, bid)
+        self.assertEqual(self.manage(episode, "trash").status_code, 409)
+        store.cancel_job("take_busy")
+        export = server.exports.create(episode, {"format": "wav"})
+        self.assertEqual(self.manage(episode, "trash").status_code, 409)
+        server.exports.update(export["id"], status="complete")
+        trashed = self.manage(episode, "trash")
+        self.assertEqual(trashed.status_code, 200)
+        with self.assertRaises(store.EpisodeUnavailable):
+            store.create_job("take_late", "Hello", "Host", self.voice, "{}", eid, bid)
+        with self.assertRaises(store.EpisodeUnavailable):
+            server.exports.create(episode, {"format": "wav"})
+        self.assertIsNone(store.get_job("take_late"))
+        self.assertIsNotNone(server.exports.get(export["id"]))
+        restored = self.manage(trashed.json(), "restore").json()
+        self.assertEqual(restored["lifecycle"], "active")
+        self.assertEqual(self.client.get(f"/episodes/{eid}/exports").status_code, 200)
+        self.assertEqual(self.client.get("/episodes?state=unknown").status_code, 422)
+
+    def test_episode_lifecycle_migration_preserves_existing_library(self):
+        # Recreate the pre-management episode schema inside this test's temporary database.
+        with store._connect() as conn:
+            conn.execute("DROP TABLE script_blocks")
+            conn.execute("DROP TABLE episodes")
+            conn.execute(
+                "CREATE TABLE episodes (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,gap_secs REAL NOT NULL DEFAULT 0.25)"
+            )
+            conn.execute(
+                "INSERT INTO episodes (id,title,created_at,updated_at,revision) VALUES ('episode_old','Existing episode','2026-10-04','2026-10-04',7)"
+            )
+        server.episodes.init_episodes()
+        server.episodes.init_episodes()
+        episode = self.client.get("/episodes/episode_old").json()
+        self.assertEqual(episode["title"], "Existing episode")
+        self.assertEqual(episode["revision"], 7)
+        self.assertEqual(episode["lifecycle"], "active")
+        self.assertEqual(len(self.client.get("/episodes").json()["items"]), 1)
+
     def wait(self, tid, status):
-        for _ in range(100):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
             row = self.client.get(f"/takes/{tid}").json()
             if row["status"] == status:
                 return row
             time.sleep(0.02)
-        self.fail(f"Take did not become {status}")
+        self.fail(f"Take did not become {status}: {row}")
 
     def test_complete_assets_and_legacy_record(self):
         FakeAdapter.release.set()
@@ -130,14 +246,31 @@ class ApiTest(unittest.TestCase):
                 break
             time.sleep(0.02)
         self.assertEqual(store.get_job(tid)["status"], "cancelled")
+        store.report_progress(tid, "synthesizing", 999)
+        self.assertEqual(store.get_job(tid)["stage"], "cancelled")
         self.assertIsNone(store.get_job(tid)["audio_path"])
         self.assertEqual(store.get_job(queued)["status"], "cancelled")
         self.assertEqual(self.client.delete(f"/takes/{tid}").status_code, 200)
+
+    def test_long_episode_accepts_up_to_the_block_limit(self):
+        def body(n):
+            return {
+                "title": "Long",
+                "blocks": [{"speaker": "Host", "voice_id": self.voice, "text": "Hi"}] * n,
+            }
+
+        ok = self.client.post("/episodes", json=body(server.MAX_BLOCKS))
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(len(ok.json()["blocks"]), server.MAX_BLOCKS)
+        self.assertEqual(
+            self.client.post("/episodes", json=body(server.MAX_BLOCKS + 1)).status_code, 422
+        )
 
     def test_restart_and_input_validation(self):
         store.create_job("take_interrupted", "Hello", "Host", self.voice, "{}")
         store.init_db()
         self.assertEqual(store.get_job("take_interrupted")["status"], "error")
+        self.assertEqual(store.get_job("take_interrupted")["stage"], "interrupted")
         self.assertEqual(
             self.client.post("/takes", json={"text": " ", "voice_id": self.voice}).status_code, 422
         )
@@ -153,6 +286,22 @@ class ApiTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             store.job_dir("../outside")
+
+    def test_live_progress_and_terminal_state(self):
+        tid = self.create()
+        self.assertTrue(FakeAdapter.entered.wait(5), self.client.get(f"/takes/{tid}").json())
+        active = self.client.get(f"/takes/{tid}").json()
+        self.assertEqual(active["status"], "generating")
+        self.assertEqual(active["stage"], "synthesizing")
+        self.assertEqual(active["decoder_steps"], 12)
+        self.assertIsNotNone(active["started_at"])
+        self.assertIsNotNone(active["progress_at"])
+        FakeAdapter.release.set()
+        finished = self.wait(tid, "complete")
+        self.assertEqual(finished["stage"], "complete")
+        store.report_progress(tid, "synthesizing", 999)
+        self.assertEqual(store.get_job(tid)["stage"], "complete")
+        self.assertEqual(store.get_job(tid)["decoder_steps"], 12)
 
     def episode(self, count=2):
         response = self.client.post(
@@ -233,6 +382,73 @@ class ApiTest(unittest.TestCase):
         reopened = self.client.get(f"/episodes/{eid}").json()
         self.assertEqual(reopened["blocks"][0]["selected_take_id"], retake["id"])
         self.assertEqual(len(reopened["blocks"][0]["takes"]), 2)
+
+    def test_completion_and_first_selection_commit_or_rollback_together(self):
+        episode = self.episode(count=1)
+        block = episode["blocks"][0]
+        tid = "take_atomic"
+        store.create_job(tid, block["text"], "Host", self.voice, "{}", episode["id"], block["id"])
+        store.start_job(tid)
+
+        def interrupted(conn):
+            server.episodes.select_first_current_take(tid, conn)
+            raise RuntimeError("selection interrupted")
+
+        with self.assertRaisesRegex(RuntimeError, "selection interrupted"):
+            store.complete_job(tid, 1, 24000, "audio.wav", "peaks.json", interrupted)
+        self.assertEqual(store.get_job(tid)["status"], "generating")
+        self.assertIsNone(server.episodes.get(episode["id"])["blocks"][0]["selected_take_id"])
+        store.complete_job(
+            tid,
+            1,
+            24000,
+            "audio.wav",
+            "peaks.json",
+            lambda conn: server.episodes.select_first_current_take(tid, conn),
+        )
+        self.assertEqual(store.get_job(tid)["status"], "complete")
+        self.assertEqual(server.episodes.get(episode["id"])["blocks"][0]["selected_take_id"], tid)
+
+    def test_partial_preview_skips_missing_lines_and_preserves_gaps(self):
+        FakeAdapter.release.set()
+        episode = self.episode(count=3)
+        eid = episode["id"]
+        self.assertEqual(self.client.get(f"/episodes/{eid}/audio?preview=true").status_code, 409)
+        for index in (0, 2):
+            bid = episode["blocks"][index]["id"]
+            tid = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+            self.wait(tid, "complete")
+        # Full playback/export assembly still requires every line.
+        self.assertEqual(self.client.get(f"/episodes/{eid}/audio").status_code, 409)
+        response = self.client.get(f"/episodes/{eid}/audio?preview=true")
+        self.assertEqual(response.status_code, 200)
+        samples, rate = sf.read(io.BytesIO(response.content))
+        self.assertEqual(rate, 24000)
+        self.assertEqual(len(samples), 54000)
+        self.assertTrue(np.all(samples[24000:30000] == 0))
+        current = self.client.get(f"/episodes/{eid}").json()
+        _, segments = server.assemble(current, allow_partial=True)
+        self.assertEqual(
+            [s["block_id"] for s in segments], [episode["blocks"][i]["id"] for i in (0, 2)]
+        )
+        self.assertEqual([s["start_secs"] for s in segments], [0, 1.25])
+        self.assertIsNone(current["blocks"][1]["selected_take_id"])
+        ids = [current["blocks"][i]["selected_take_id"] for i in (0, 2)]
+        # A preview URL captures its takes and gap even as more lines become ready.
+        snapshot = self.client.get(f"/episodes/{eid}/audio?preview=true&selection={ids[0]}")
+        self.assertEqual(len(sf.read(io.BytesIO(snapshot.content))[0]), 24000)
+        changed_gap = self.client.get(
+            f"/episodes/{eid}/audio?preview=true&selection={','.join(ids)}&gap=0.5"
+        )
+        self.assertEqual(len(sf.read(io.BytesIO(changed_gap.content))[0]), 60000)
+        for invalid in ("take_missing", f"{ids[0]},{ids[0]}", f"{ids[1]},{ids[0]}"):
+            self.assertEqual(
+                self.client.get(
+                    f"/episodes/{eid}/audio?preview=true&selection={invalid}"
+                ).status_code,
+                409,
+            )
+        self.assertEqual(self.client.get(f"/episodes/{eid}").json(), current)
 
     def test_selection_cannot_race_take_deletion(self):
         FakeAdapter.release.set()

@@ -10,6 +10,7 @@ relationships are added alongside these compatible Phase 1 rows.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 from contextlib import contextmanager
@@ -18,7 +19,7 @@ from pathlib import Path
 
 # Paths relative to the repo root (one level up from this file's directory).
 _REPO_ROOT = Path(__file__).parent.parent
-DATA_DIR = _REPO_ROOT / "data"
+DATA_DIR = Path(os.environ.get("VIBEPOD_DATA_DIR", str(_REPO_ROOT / "data"))).expanduser().resolve()
 DB_PATH = DATA_DIR / "db" / "vibepod.db"
 GENERATIONS_DIR = DATA_DIR / "generations"
 
@@ -38,6 +39,16 @@ CREATE TABLE IF NOT EXISTS generations (
     error_message   TEXT
 )
 """
+
+
+class EpisodeUnavailable(ValueError):
+    pass
+
+
+def require_available_episode(conn, episode_id):
+    row = conn.execute("SELECT lifecycle FROM episodes WHERE id=?", (episode_id,)).fetchone()
+    if not row or row["lifecycle"] == "trashed":
+        raise EpisodeUnavailable("Restore the episode from Trash before generating or exporting.")
 
 
 @contextmanager
@@ -63,8 +74,16 @@ def init_db() -> None:
         for name in ("voice_id", "model_id", "settings_json", "episode_id", "block_id"):
             if name not in columns:
                 conn.execute(f"ALTER TABLE generations ADD COLUMN {name} TEXT")
+        for name, definition in (
+            ("stage", "TEXT"),
+            ("started_at", "TEXT"),
+            ("progress_at", "TEXT"),
+            ("decoder_steps", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE generations ADD COLUMN {name} {definition}")
         conn.execute(
-            "UPDATE generations SET status='error', error_message='Interrupted by server restart' WHERE status IN ('queued', 'generating')"
+            "UPDATE generations SET status='error',stage='interrupted', error_message='Interrupted by server restart' WHERE status IN ('queued', 'generating')"
         )
 
 
@@ -79,6 +98,9 @@ def create_job(
     model_id="Qwen3-TTS-12Hz-1.7B-Base",
 ):
     with _connect() as conn:
+        if episode_id:
+            conn.execute("BEGIN IMMEDIATE")
+            require_available_episode(conn, episode_id)
         conn.execute(
             "INSERT INTO generations (id,created_at,status,script,speaker,cfg_scale,voice_id,model_id,settings_json,episode_id,block_id) VALUES (?,?,'queued',?,?,0,?,?,?,?,?)",
             (
@@ -98,16 +120,27 @@ def create_job(
 def start_job(job_id):
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status='generating' WHERE id=? AND status='queued'", (job_id,)
+            "UPDATE generations SET status='generating',stage='preparing',started_at=?,progress_at=? WHERE id=? AND status='queued'",
+            (datetime.now(UTC).isoformat(), datetime.now(UTC).isoformat(), job_id),
         )
 
 
-def complete_job(job_id, duration, rate, audio, peaks):
+def report_progress(job_id, stage, steps=None):
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status='complete',duration_secs=?,sample_rate=?,audio_path=?,waveform_path=? WHERE id=? AND status='generating'",
+            "UPDATE generations SET stage=?,decoder_steps=COALESCE(?,decoder_steps),progress_at=? WHERE id=? AND status='generating'",
+            (stage, steps, datetime.now(UTC).isoformat(), job_id),
+        )
+
+
+def complete_job(job_id, duration, rate, audio, peaks, on_complete=None):
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE generations SET status='complete',stage='complete',duration_secs=?,sample_rate=?,audio_path=?,waveform_path=? WHERE id=? AND status='generating'",
             (duration, rate, str(audio), str(peaks), job_id),
         )
+        if on_complete:
+            on_complete(conn)
 
 
 def save_completed_job(
@@ -149,7 +182,7 @@ def save_completed_job(
 def cancel_job(job_id: str) -> None:
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status = 'cancelled' WHERE id = ? AND status IN ('queued','generating')",
+            "UPDATE generations SET status = 'cancelled',stage='cancelled' WHERE id = ? AND status IN ('queued','generating')",
             (job_id,),
         )
 
@@ -157,15 +190,23 @@ def cancel_job(job_id: str) -> None:
 def fail_job(job_id: str, error_message: str) -> None:
     with _connect() as conn:
         conn.execute(
-            "UPDATE generations SET status = 'error', error_message = ? WHERE id = ? AND status IN ('queued','generating')",
+            "UPDATE generations SET status = 'error',stage='error', error_message = ? WHERE id = ? AND status IN ('queued','generating')",
             (error_message[:2000], job_id),
         )
 
 
 def list_jobs(limit: int = 50, offset: int = 0) -> list[dict]:
     with _connect() as conn:
+        has_episodes = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='episodes'"
+        ).fetchone()
+        visible = (
+            "WHERE NOT EXISTS (SELECT 1 FROM episodes e WHERE e.id=generations.episode_id AND e.lifecycle='trashed')"
+            if has_episodes
+            else ""
+        )
         rows = conn.execute(
-            "SELECT * FROM generations ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM generations {visible} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
     return [dict(row) for row in rows]
@@ -189,6 +230,15 @@ def delete_job(job_id: str) -> bool:
         tables = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
+        if (
+            "episodes" in tables
+            and conn.execute(
+                "SELECT 1 FROM generations g JOIN episodes e ON e.id=g.episode_id "
+                "WHERE g.id=? AND e.lifecycle='trashed'",
+                (job_id,),
+            ).fetchone()
+        ):
+            raise TakeInUse("Restore the episode from Trash before deleting its takes")
         if (
             "script_blocks" in tables
             and conn.execute(

@@ -1,23 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api";
+import { MAX_BLOCKS } from "@/lib/types/episode";
 import type { Episode, EpisodeSummary, Voice, ScriptBlock } from "@/lib/types/episode";
-
-async function api(path: string, method = "GET", body?: unknown) {
-  const response = await fetch(`/api/${path}`, {
-    method,
-    cache: "no-store",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(
-      typeof data.detail === "string"
-        ? data.detail
-        : (data.detail?.[0]?.msg ?? data.error ?? "Request failed")
-    );
-  return data;
-}
 
 export function useStudio() {
   const [episode, setEpisode] = useState<Episode | null>(null);
@@ -170,6 +155,15 @@ export function useStudio() {
       setStatus("Saved");
     });
   }
+  function adopt(value: Episode) {
+    install(value);
+    localStorage.setItem("vibepod:last-episode", value.id);
+    window.history.replaceState(null, "", `/?episode=${encodeURIComponent(value.id)}`);
+    version.current = 0;
+    savedVersion.current = 0;
+    setStatus("Saved");
+    refreshRecent().catch(() => {});
+  }
   function create() {
     return action(async () => {
       install(
@@ -233,8 +227,8 @@ export function useStudio() {
         selected_take_id: null,
       });
     }
-    if (!parsed.length || parsed.length + draft.current.blocks.length > 100) {
-      setError("Import between 1 and 100 blocks in total.");
+    if (!parsed.length || parsed.length + draft.current.blocks.length > MAX_BLOCKS) {
+      setError(`Import between 1 and ${MAX_BLOCKS} blocks in total.`);
       return false;
     }
     setError("");
@@ -285,6 +279,7 @@ export function useStudio() {
     select,
     cancel,
     save,
+    adopt,
     refreshVoices: async () => setVoices(await api("voices")),
   };
 }

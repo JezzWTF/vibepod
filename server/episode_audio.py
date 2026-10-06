@@ -12,7 +12,7 @@ import generation_store as store
 _lock = threading.Lock()
 
 
-def assemble(episode):
+def assemble(episode, *, allow_partial=False):
     selected = []
     segments = []
     cursor = 0
@@ -26,6 +26,8 @@ def assemble(episode):
             None,
         )
         if not take:
+            if allow_partial:
+                continue
             raise ValueError("Every block needs a selected completed take before episode playback")
         selected.append(take)
         segments.append(
@@ -33,7 +35,7 @@ def assemble(episode):
         )
         cursor += take["duration_secs"] + episode["gap_secs"]
     if not selected:
-        raise ValueError("Add a script block before playback")
+        raise ValueError("Select at least one completed take before previewing")
     fingerprint = hashlib.sha256(
         json.dumps([episode["gap_secs"], [t["id"] for t in selected]]).encode()
     ).hexdigest()[:24]

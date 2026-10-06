@@ -1,16 +1,24 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useStudio } from "@/hooks/useStudio";
+import { useScriptJob } from "@/hooks/useScriptJob";
+import { MAX_BLOCKS } from "@/lib/types/episode";
 import TakeInspector from "@/components/TakeInspector";
 import StudioTransport from "@/components/StudioTransport";
 import VoiceDialog from "@/components/VoiceDialog";
 import ExportDialog from "@/components/ExportDialog";
+import WriteDialog from "@/components/WriteDialog";
+import SourcesDialog, { sourceCount } from "@/components/SourcesDialog";
 import "./studio.css";
+import "./write.css";
 
 export default function StudioPage() {
   const studio = useStudio();
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const writer = useScriptJob();
   const [stopSignal, setStopSignal] = useState(0);
   const [selected, setSelected] = useState(0),
     [importing, setImporting] = useState(false),
@@ -19,17 +27,50 @@ export default function StudioPage() {
     [mediaError, setMediaError] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
   const ep = studio.episode;
+  async function applyScript() {
+    const job = writer.job;
+    if (!job) return false;
+    try {
+      // Save first so adopting the new episode cannot drop unsaved edits to the current one.
+      const saved = ep ? await studio.save() : null;
+      const result =
+        job.target === "this" && saved
+          ? await writer.apply(saved.id, saved.revision)
+          : await writer.apply();
+      if (!result) return false;
+      studio.adopt(result);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const sections = writer.job?.outline.sections || "…";
+  const scriptChip = !writer.job
+    ? null
+    : writer.running
+      ? `Writing ${Math.min(writer.job.drafted + 1, writer.job.outline.sections || 1)}/${sections}`
+      : writer.job.status === "done"
+        ? "Script ready"
+        : "Writing stopped";
   const block = ep?.blocks[selected];
   const cast = Array.from(new Set(ep?.blocks.map((b) => b.speaker) ?? []));
   const active =
     ep?.blocks.flatMap((b) => b.takes).filter((t) => ["queued", "generating"].includes(t.status)) ??
     [];
   const missing = ep?.blocks.filter((b) => !b.selected_take_id || b.stale).length ?? 0;
-  const ready =
-    !!ep?.blocks.length &&
-    ep.blocks.every((b) =>
-      b.takes.some((t) => t.id === b.selected_take_id && t.status === "complete")
-    );
+  const playable =
+    ep?.blocks.flatMap((block) => {
+      const take = block.takes.find(
+        (take) => take.id === block.selected_take_id && take.status === "complete"
+      );
+      return take ? [{ block, take }] : [];
+    }) ?? [];
+  let previewCursor = 0;
+  const startOffsets: Record<string, number> = {};
+  for (const { block, take } of playable) {
+    if (block.id) startOffsets[block.id] = previewCursor;
+    previewCursor += (take.duration_secs ?? 0) + (ep?.gap_secs ?? 0);
+  }
   useEffect(() => {
     audio.current?.pause();
     setSelected(0);
@@ -74,6 +115,19 @@ export default function StudioPage() {
         <span className="studio-save" role="status">
           {studio.status}
         </span>
+        {scriptChip && (
+          <button
+            className={`write-chip ${writer.running ? "running" : ""}`}
+            role="status"
+            onClick={() => setWriteOpen(true)}
+          >
+            <i />
+            {scriptChip}
+          </button>
+        )}
+        <button className="studio-secondary" onClick={() => setWriteOpen(true)}>
+          Write with AI
+        </button>
         <button
           className="studio-primary"
           disabled={!ep || studio.busy}
@@ -175,9 +229,7 @@ export default function StudioPage() {
               ))}
             </>
           )}
-          <div className="studio-local">
-            Local workspace <span />
-          </div>
+          <div className="studio-version">{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</div>
         </nav>
         <main id="script" className="studio-script">
           {ep ? (
@@ -194,12 +246,19 @@ export default function StudioPage() {
               </div>
               <div className="script-toolbar">
                 <button
-                  disabled={studio.busy || studio.status === "Saving…" || ep.blocks.length >= 100}
+                  disabled={
+                    studio.busy || studio.status === "Saving…" || ep.blocks.length >= MAX_BLOCKS
+                  }
                   onClick={studio.add}
                 >
                   + Add block
                 </button>
                 <button onClick={() => setImporting(!importing)}>Import script</button>
+                {sourceCount(ep.sources) > 0 && (
+                  <button onClick={() => setSourcesOpen(true)}>
+                    Sources <span>{sourceCount(ep.sources)}</span>
+                  </button>
+                )}
                 <span>{ep.blocks.length} blocks</span>
                 <label className="gap-control">
                   Gap{" "}
@@ -362,6 +421,9 @@ export default function StudioPage() {
                   <button className="studio-primary" onClick={studio.add}>
                     Add the first block
                   </button>
+                  <button className="studio-secondary" onClick={() => setWriteOpen(true)}>
+                    Write with AI
+                  </button>
                 </div>
               )}
             </>
@@ -375,6 +437,9 @@ export default function StudioPage() {
               </p>
               <button className="studio-primary" disabled={studio.busy} onClick={studio.create}>
                 Create an episode
+              </button>
+              <button className="studio-secondary" onClick={() => setWriteOpen(true)}>
+                Write with AI
               </button>
             </div>
           )}
@@ -398,23 +463,20 @@ export default function StudioPage() {
         />
       </div>
       <StudioTransport
+        key={ep?.id ?? "empty"}
         title={ep?.title ?? "No episode open"}
-        src={
-          ready && ep
-            ? `/api/episodes/${ep.id}/audio?selection=${encodeURIComponent(ep.blocks.map((b) => b.selected_take_id).join(","))}&gap=${ep.gap_secs}`
-            : null
-        }
-        ready={ready}
+        playlist={{
+          src:
+            playable.length && ep
+              ? `/api/episodes/${ep.id}/audio?preview=true&selection=${encodeURIComponent(playable.map(({ take }) => take.id).join(","))}&gap=${ep.gap_secs}`
+              : null,
+          readyCount: playable.length,
+          totalCount: ep?.blocks.length ?? 0,
+          duration: Math.max(0, previewCursor - (playable.length ? (ep?.gap_secs ?? 0) : 0)),
+          startOffsets,
+        }}
+        selectedBlockId={block?.id ?? null}
         stopSignal={stopSignal}
-        onStart={ep?.blocks
-          .slice(0, selected)
-          .reduce(
-            (sum, b) =>
-              sum +
-              (b.takes.find((t) => t.id === b.selected_take_id)?.duration_secs ?? 0) +
-              ep.gap_secs,
-            0
-          )}
         onPlay={() => {
           audio.current?.pause();
           setAudition(null);
@@ -424,6 +486,19 @@ export default function StudioPage() {
         open={voiceOpen}
         onClose={() => setVoiceOpen(false)}
         onSaved={studio.refreshVoices}
+      />
+      <WriteDialog
+        open={writeOpen}
+        onClose={() => setWriteOpen(false)}
+        script={writer}
+        canAppend={!!ep}
+        onOpenEpisode={applyScript}
+      />
+      <SourcesDialog
+        open={sourcesOpen}
+        onClose={() => setSourcesOpen(false)}
+        title={ep?.title ?? ""}
+        sources={ep?.sources ?? ""}
       />
       <ExportDialog
         episode={ep}

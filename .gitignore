@@ -29,3 +29,7 @@ Thumbs.db
 # Local studio assets and database
 data/
 web/.next-check/
+.vibepod/
+desktop/resources/
+desktop/dist/
+web/.next-desktop/

@@ -2,9 +2,12 @@
 
 import io
 import json
+import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import soundfile as sf
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -16,10 +19,14 @@ import episode_export
 import episode_store as episodes
 import export_store as exports
 import generation_store as store
+import parent_watch
 import voice_store as voices
 from episode_audio import assemble
 from ids import take_id
+from line_split import synthesize_line
 from model_adapter import Cancelled, QwenAdapter
+from script_agent import jobs as script_jobs
+from script_agent.api import router as script_router
 from waveform import write_peaks
 
 
@@ -28,19 +35,40 @@ async def lifespan(app):
     store.init_db()
     episodes.init_episodes()
     exports.init_exports()
+    script_jobs.init()
+    parent_watch.start()
+    app.state.script_worker = ThreadPoolExecutor(max_workers=1)
+    app.state.script_cancel = {}
     app.state.adapter = QwenAdapter()
     app.state.worker = ThreadPoolExecutor(max_workers=1)
     app.state.export_worker = ThreadPoolExecutor(max_workers=1)
     app.state.pending = {}
     app.state.lock = threading.Lock()
     yield
-    for event in list(app.state.pending.values()):
+    for event in list(app.state.pending.values()) + list(app.state.script_cancel.values()):
         event.set()
+    app.state.script_worker.shutdown(wait=True, cancel_futures=True)
     app.state.worker.shutdown(wait=True, cancel_futures=True)
     app.state.export_worker.shutdown(wait=True, cancel_futures=True)
 
 
 app = FastAPI(title="VibePod Studio", lifespan=lifespan)
+app.include_router(script_router)
+
+
+def progress_reporter(tid):
+    last_stage, last_write = None, 0.0
+
+    def report(stage, steps=None):
+        nonlocal last_stage, last_write
+        now = time.monotonic()
+        if stage != last_stage or now - last_write >= 0.5:
+            store.report_progress(tid, stage, steps)
+            if stage != last_stage:
+                logging.getLogger("uvicorn.error").info("Take %s: %s", tid, stage)
+            last_stage, last_write = stage, now
+
+    return report
 
 
 class DesignRequest(BaseModel):
@@ -58,13 +86,16 @@ def render_design(tid, request, event):
         if event.is_set():
             return
         store.start_job(tid)
-        audio = app.state.adapter.design(request.text, request.description, event)
+        progress = progress_reporter(tid)
+        audio = app.state.adapter.design(request.text, request.description, event, progress)
         if event.is_set():
             raise Cancelled()
+        progress("saving_audio")
         directory = store.job_dir(tid)
         directory.mkdir(parents=True, exist_ok=True)
         wav, peaks = directory / "audio.wav", directory / "peaks.json"
         sf.write(wav, audio.samples, audio.sample_rate, subtype="PCM_16")
+        progress("building_waveform")
         write_peaks(wav, peaks)
         store.complete_job(
             tid, len(audio.samples) / audio.sample_rate, audio.sample_rate, wav, peaks
@@ -141,18 +172,27 @@ def render(tid, request, voice, event):
         if event.is_set():
             return
         store.start_job(tid)
-        audio = app.state.adapter.synthesize(request.text, voice, {"seed": request.seed}, event)
+        progress = progress_reporter(tid)
+        audio = synthesize_line(
+            app.state.adapter, request.text, voice, request.seed, event, progress
+        )
         if event.is_set():
             raise Cancelled()
+        progress("saving_audio")
         directory = store.job_dir(tid)
         directory.mkdir(parents=True, exist_ok=True)
         wav, peaks = directory / "audio.wav", directory / "peaks.json"
         sf.write(wav, audio.samples, audio.sample_rate, subtype="PCM_16")
+        progress("building_waveform")
         write_peaks(wav, peaks)
         store.complete_job(
-            tid, len(audio.samples) / audio.sample_rate, audio.sample_rate, wav, peaks
+            tid,
+            len(audio.samples) / audio.sample_rate,
+            audio.sample_rate,
+            wav,
+            peaks,
+            on_complete=lambda conn: episodes.select_first_current_take(tid, conn),
         )
-        episodes.select_first_current_take(tid)
     except Cancelled:
         store.cancel_job(tid)
     except Exception as exc:
@@ -210,19 +250,25 @@ def create_take(request: TakeRequest):
                 409, "Save the current script and voice assignment before generating"
             )
     tid, event = take_id(), threading.Event()
-    store.create_job(
-        tid,
-        request.text,
-        voice["name"],
-        voice["id"],
-        json.dumps({"seed": request.seed}),
-        request.episode_id,
-        request.block_id,
-    )
+    try:
+        store.create_job(
+            tid,
+            request.text,
+            voice["name"],
+            voice["id"],
+            json.dumps({"seed": request.seed}),
+            request.episode_id,
+            request.block_id,
+        )
+    except store.EpisodeUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
     with app.state.lock:
         app.state.pending[tid] = event
     app.state.worker.submit(render, tid, request, voice, event)
     return require_take(tid)
+
+
+MAX_BLOCKS = episodes.MAX_BLOCKS
 
 
 class BlockRequest(BaseModel):
@@ -235,7 +281,7 @@ class BlockRequest(BaseModel):
 
 class EpisodeRequest(BaseModel):
     title: str = Field(min_length=1, max_length=160)
-    blocks: list[BlockRequest] = Field(max_length=100)
+    blocks: list[BlockRequest] = Field(max_length=MAX_BLOCKS)
     gap_secs: float = Field(default=0.25, ge=0, le=5)
     revision: int | None = None
 
@@ -263,8 +309,24 @@ def create_episode(request: EpisodeRequest):
 
 
 @app.get("/episodes")
-def list_episodes():
-    return {"items": episodes.list_all()}
+def list_episodes(state: Literal["active", "archived", "trashed"] = "active"):
+    return {"items": episodes.list_all(state), "counts": episodes.counts()}
+
+
+class LifecycleRequest(BaseModel):
+    action: Literal["archive", "trash", "restore"]
+    revision: int = Field(ge=1)
+
+
+@app.post("/episodes/{eid}/lifecycle")
+def manage_episode(eid: str, request: LifecycleRequest):
+    try:
+        result = episodes.change_lifecycle(eid, request.action, request.revision)
+    except episodes.Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not result:
+        raise HTTPException(404, "Episode not found")
+    return result
 
 
 @app.get("/episodes/{eid}")
@@ -362,9 +424,41 @@ def cancel_episode(eid: str):
 
 
 @app.get("/episodes/{eid}/audio")
-def episode_audio(eid: str):
+def episode_audio(
+    eid: str,
+    preview: bool = False,
+    selection: str | None = Query(default=None, max_length=16000),
+    gap: float | None = Query(default=None, ge=0, le=5),
+):
     try:
-        path, _ = assemble(get_episode(eid))
+        episode = get_episode(eid)
+        if selection is not None:
+            requested = selection.split(",") if selection else []
+            if len(requested) != len(set(requested)):
+                raise ValueError("Preview selections cannot contain duplicate takes")
+            requested_ids = set(requested)
+            ordered = []
+            blocks = []
+            for block in episode["blocks"]:
+                matches = [
+                    t
+                    for t in block["takes"]
+                    if t["id"] in requested_ids and t["status"] == "complete"
+                ]
+                if len(matches) > 1:
+                    raise ValueError("Choose one completed take per script block")
+                take_id = matches[0]["id"] if matches else None
+                if take_id:
+                    ordered.append(take_id)
+                blocks.append({**block, "selected_take_id": take_id})
+            if ordered != requested:
+                raise ValueError(
+                    "Preview takes must belong to this episode and follow script order"
+                )
+            episode = {**episode, "blocks": blocks}
+        if gap is not None:
+            episode = {**episode, "gap_secs": gap}
+        path, _ = assemble(episode, allow_partial=preview)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return FileResponse(path, media_type="audio/wav")
@@ -428,6 +522,8 @@ async def create_export(
                 )
         app.state.export_worker.submit(episode_export.render, job["id"])
         return exports.public(exports.get(job["id"]))
+    except store.EpisodeUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
     except (ValueError, OSError) as exc:
         raise HTTPException(422, str(exc)) from exc
 

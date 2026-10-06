@@ -1,9 +1,12 @@
 """Durable scripts, immutable take histories, and explicit take selections."""
 
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime
 
 import generation_store as store
+
+MAX_BLOCKS = 500
 
 
 class Conflict(ValueError):
@@ -23,6 +26,9 @@ def init_episodes():
         for name, definition in (
             ("revision", "INTEGER NOT NULL DEFAULT 1"),
             ("gap_secs", "REAL NOT NULL DEFAULT 0.25"),
+            ("lifecycle", "TEXT NOT NULL DEFAULT 'active'"),
+            ("trash_previous", "TEXT"),
+            ("sources", "TEXT NOT NULL DEFAULT ''"),
         ):
             if name not in columns:
                 conn.execute(f"ALTER TABLE episodes ADD COLUMN {name} {definition}")
@@ -47,23 +53,23 @@ def _write_blocks(conn, eid, blocks):
         )
 
 
-def create(title, blocks, gap_secs=0.25):
+def create(title, blocks, gap_secs=0.25, sources=""):
     eid, now = _id("episode"), datetime.now(UTC).isoformat()
     with store._connect() as conn:
         conn.execute(
-            "INSERT INTO episodes (id,title,created_at,updated_at,gap_secs) VALUES (?,?,?,?,?)",
-            (eid, title, now, now, gap_secs),
+            "INSERT INTO episodes (id,title,created_at,updated_at,gap_secs,sources) VALUES (?,?,?,?,?,?)",
+            (eid, title, now, now, gap_secs, sources),
         )
         _write_blocks(conn, eid, blocks)
     return get(eid)
 
 
-def get(eid):
+def get(eid, include_trashed=False):
     with store._connect() as conn:
         # One read transaction keeps the script and take selection consistent.
         conn.execute("BEGIN")
         episode = conn.execute("SELECT * FROM episodes WHERE id=?", (eid,)).fetchone()
-        if not episode:
+        if not episode or (episode["lifecycle"] == "trashed" and not include_trashed):
             return None
         blocks = conn.execute(
             "SELECT * FROM script_blocks WHERE episode_id=? ORDER BY position", (eid,)
@@ -89,23 +95,77 @@ def get(eid):
     return result
 
 
-def list_all():
+def list_all(state="active"):
+    if state not in ("active", "archived", "trashed"):
+        raise ValueError("Unknown episode state")
     with store._connect() as conn:
         rows = conn.execute(
-            "SELECT e.*,COUNT(b.id) AS block_count FROM episodes e LEFT JOIN script_blocks b ON e.id=b.episode_id GROUP BY e.id ORDER BY e.updated_at DESC"
+            "SELECT e.*,COUNT(b.id) AS block_count FROM episodes e LEFT JOIN script_blocks b ON e.id=b.episode_id WHERE e.lifecycle=? GROUP BY e.id ORDER BY e.updated_at DESC",
+            (state,),
         ).fetchall()
     return [dict(row) for row in rows]
 
 
-def update(eid, title, blocks, revision, gap_secs=0.25):
+def counts():
+    result = dict.fromkeys(("active", "archived", "trashed"), 0)
+    with store._connect() as conn:
+        result.update(
+            dict(conn.execute("SELECT lifecycle,COUNT(*) FROM episodes GROUP BY lifecycle"))
+        )
+    return result
+
+
+def change_lifecycle(eid, action, revision):
+    """Organize episodes without discarding scripts, selections or audio assets."""
+    with store._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        episode = conn.execute("SELECT * FROM episodes WHERE id=?", (eid,)).fetchone()
+        if not episode:
+            return None
+        if episode["revision"] != revision:
+            raise Conflict("Episode changed elsewhere. Reload before managing it.")
+        previous = episode["trash_previous"]
+        state = episode["lifecycle"]
+        if action == "archive" and state == "active":
+            target = "archived"
+        elif action == "trash" and state in ("active", "archived"):
+            if (
+                conn.execute(
+                    "SELECT 1 FROM generations WHERE episode_id=? AND status IN ('queued','generating')",
+                    (eid,),
+                ).fetchone()
+                or conn.execute(
+                    "SELECT 1 FROM exports WHERE episode_id=? AND status IN ('queued','running')",
+                    (eid,),
+                ).fetchone()
+            ):
+                raise Conflict("Wait for generation and export to finish before moving to Trash.")
+            target, previous = "trashed", state
+        elif action == "restore" and state in ("archived", "trashed"):
+            target = previous or "active" if state == "trashed" else "active"
+            previous = None
+        else:
+            raise Conflict("This action is unavailable for the episode's current state.")
+        conn.execute(
+            "UPDATE episodes SET lifecycle=?,trash_previous=?,revision=revision+1,updated_at=? WHERE id=?",
+            (target, previous, datetime.now(UTC).isoformat(), eid),
+        )
+    return get(eid, include_trashed=True)
+
+
+def update(eid, title, blocks, revision, gap_secs=0.25, sources=None):
     now = datetime.now(UTC).isoformat()
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        episode = conn.execute("SELECT revision FROM episodes WHERE id=?", (eid,)).fetchone()
+        episode = conn.execute(
+            "SELECT revision,lifecycle FROM episodes WHERE id=?", (eid,)
+        ).fetchone()
         if not episode:
             return None
         if episode[0] != revision:
             raise Conflict("Episode changed elsewhere. Reload before saving.")
+        if episode["lifecycle"] == "trashed":
+            raise Conflict("Restore this episode from Trash before editing.")
         owned = {
             row[0]: row[1]
             for row in conn.execute(
@@ -126,8 +186,8 @@ def update(eid, title, blocks, revision, gap_secs=0.25):
                 if not take or take[0] != "complete":
                     raise ValueError("Select a completed take belonging to this block")
         conn.execute(
-            "UPDATE episodes SET title=?,updated_at=?,revision=revision+1,gap_secs=? WHERE id=?",
-            (title, now, gap_secs, eid),
+            "UPDATE episodes SET title=?,updated_at=?,revision=revision+1,gap_secs=?,sources=COALESCE(?,sources) WHERE id=?",
+            (title, now, gap_secs, sources, eid),
         )
         conn.execute("DELETE FROM script_blocks WHERE episode_id=?", (eid,))
         _write_blocks(conn, eid, blocks)
@@ -137,8 +197,10 @@ def update(eid, title, blocks, revision, gap_secs=0.25):
 def select(eid, bid, tid, revision):
     with store._connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        episode = conn.execute("SELECT revision FROM episodes WHERE id=?", (eid,)).fetchone()
-        if not episode or episode[0] != revision:
+        episode = conn.execute(
+            "SELECT revision,lifecycle FROM episodes WHERE id=?", (eid,)
+        ).fetchone()
+        if not episode or episode[0] != revision or episode["lifecycle"] == "trashed":
             raise Conflict("Episode changed elsewhere. Reload before selecting a take.")
         take = conn.execute(
             "SELECT status FROM generations WHERE id=? AND episode_id=? AND block_id=?",
@@ -159,9 +221,9 @@ def select(eid, bid, tid, revision):
     return get(eid)
 
 
-def select_first_current_take(tid):
+def select_first_current_take(tid, connection=None):
     """Completion may fill an empty selection, but never replace the user's choice."""
-    with store._connect() as conn:
+    with nullcontext(connection) if connection is not None else store._connect() as conn:
         take = conn.execute(
             "SELECT * FROM generations WHERE id=? AND status='complete'", (tid,)
         ).fetchone()
@@ -184,3 +246,20 @@ def selected_by(tid):
             conn.execute("SELECT 1 FROM script_blocks WHERE selected_take_id=?", (tid,)).fetchone()
             is not None
         )
+
+
+def append_script(eid, revision, new_blocks, sources, limit):
+    """Add generated blocks after the last one, reusing the voices already cast to each speaker."""
+    episode = get(eid)
+    if not episode:
+        return None
+    if len(episode["blocks"]) + len(new_blocks) > limit:
+        raise ValueError(f"An episode can have at most {limit} blocks")
+    keep = ("id", "speaker", "voice_id", "text", "selected_take_id")
+    blocks = [{key: b[key] for key in keep} for b in episode["blocks"]]
+    blocks += [
+        {"speaker": b["speaker"], "text": b["text"], "voice_id": episode["cast"].get(b["speaker"])}
+        for b in new_blocks
+    ]
+    merged = "\n\n".join(part for part in (episode["sources"], sources) if part.strip())
+    return update(eid, episode["title"], blocks, revision, episode["gap_secs"], merged)

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'"
+    />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>VibePod Desktop</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <svg style="display: none" aria-hidden="true">
+      <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4 10-10" /></symbol>
+      <symbol id="folder" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v12H3V7Z" /></symbol>
+      <symbol id="shield" viewBox="0 0 24 24">
+        <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" />
+        <path d="m8 12 3 3 5-6" />
+      </symbol>
+      <symbol id="logo" viewBox="0 0 24 24">
+        <path d="M5 5v14M8.5 5v14M12 5v14M15.5 5v14M19 5v14" />
+      </symbol>
+    </svg>
+
+    <div class="shell">
+      <header class="chrome">
+        <div class="brand">
+          <svg aria-hidden="true"><use href="#logo" /></svg>VibePod <small>Desktop</small>
+        </div>
+        <small id="chrome-state">Set up your Studio</small>
+      </header>
+      <div class="workspace">
+        <aside class="rail">
+          <p class="eyebrow">Your local Studio</p>
+          <ol class="steps"></ol>
+          <p class="rail-note">Your voices. Your machine.<span>Audio stays local.</span></p>
+        </aside>
+        <main>
+          <section class="view" id="setup">
+            <p class="overline">First launch</p>
+            <h1>Make room for your Studio.</h1>
+            <p class="intro">
+              Choose where your voice models and episodes live. VibePod takes care of the engine and
+              keeps it separate from your work.
+            </p>
+            <div class="system">
+              <div>
+                <span>Graphics card</span
+                ><strong
+                  ><svg aria-hidden="true"><use href="#check" /></svg>Checking device</strong
+                >
+              </div>
+              <div>
+                <span>Driver</span
+                ><strong
+                  ><svg aria-hidden="true"><use href="#check" /></svg>Checking driver</strong
+                >
+              </div>
+              <div><span>Available storage</span><strong>Checking storage</strong></div>
+            </div>
+            <div class="section-head">
+              <h2>Storage locations</h2>
+              <span>Choose before installation</span>
+            </div>
+            <div class="location">
+              <svg aria-hidden="true"><use href="#folder" /></svg>
+              <div>
+                <h2>Voice models</h2>
+                <p class="path" id="models-path">D:\VibePod\Models</p>
+              </div>
+              <button data-location="models">Choose folder</button>
+            </div>
+            <div class="location">
+              <svg aria-hidden="true"><use href="#folder" /></svg>
+              <div>
+                <h2>Episodes & voices</h2>
+                <p class="path" id="library-path">D:\VibePod\Library</p>
+              </div>
+              <button data-location="library">Choose folder</button>
+            </div>
+            <label class="option"
+              ><input id="design-model" type="checkbox" checked /><span
+                >Include voice design<small
+                  >Create new voices from a description. You can install this model later.</small
+                ></span
+              ></label
+            >
+            <p class="summary-line">
+              Application files are managed by VibePod. Model downloads can resume if interrupted.
+            </p>
+            <div class="actions">
+              <p>Internet is needed for setup.<br />Generation runs locally afterwards.</p>
+              <button class="primary" id="begin">Set up VibePod</button>
+            </div>
+          </section>
+          <section class="view" id="install" hidden>
+            <p class="overline">Setting up</p>
+            <h1>Your Studio is taking shape.</h1>
+            <p class="intro">
+              The engine is ready. We’re downloading the voice models to your chosen location.
+            </p>
+            <div class="job complete">
+              <div class="job-head">
+                <span class="mark">✓</span>
+                <h2>Voice engine</h2>
+                <span>Installed</span>
+              </div>
+              <div class="detail">Managed by VibePod</div>
+            </div>
+            <div class="job active" id="base-job">
+              <div class="job-head">
+                <span class="mark">02</span>
+                <h2 id="download-title">Core voice model</h2>
+                <span id="base-state">Downloading</span>
+              </div>
+              <div class="detail path" id="download-path"></div>
+              <div
+                class="progress"
+                role="progressbar"
+                aria-label="Model download"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="32"
+              >
+                <div id="download-bar"></div>
+              </div>
+              <div class="download-stats">
+                <span id="download-bytes"></span><span id="download-speed"></span>
+              </div>
+            </div>
+            <div class="job" id="design-job">
+              <div class="job-head">
+                <span class="mark">03</span>
+                <h2>Voice design model</h2>
+                <span id="design-state">Waiting</span>
+              </div>
+              <div class="detail" id="design-detail">Downloads after the core model</div>
+            </div>
+            <div class="job">
+              <div class="job-head">
+                <span class="mark">04</span>
+                <h2>Final checks</h2>
+                <span id="final-state">Waiting</span>
+              </div>
+              <div class="detail">Verify files and start the local engine</div>
+            </div>
+            <div class="safe">
+              <svg aria-hidden="true"><use href="#shield" /></svg
+              ><span
+                >Downloads are verified before use. You can pause and resume without starting
+                over.</span
+              >
+            </div>
+            <div class="actions">
+              <button id="pause">Pause download</button>
+            </div>
+            <p class="status-note" id="download-note" aria-live="polite"></p>
+          </section>
+          <section class="view" id="ready" hidden>
+            <div class="ready-icon">
+              <svg aria-hidden="true"><use href="#check" /></svg>
+            </div>
+            <p class="overline">Ready to create</p>
+            <h1>Your Studio is ready.</h1>
+            <p class="intro">
+              Write the conversation, choose your cast, and bring an episode to life. VibePod will
+              start the engine when you open the Studio.
+            </p>
+            <ul class="ready-list">
+              <li>Voice engine<span>Verified</span></li>
+              <li>Core voice model<span>Available locally</span></li>
+              <li id="ready-design">Voice design<span>Available locally</span></li>
+              <li>Episodes & voices<span class="path" id="ready-path"></span></li>
+            </ul>
+            <div class="actions">
+              <button class="quiet" id="review-settings">Review storage settings</button
+              ><button class="primary" id="open-studio">Open Studio</button>
+            </div>
+            <p class="status-note" id="launch-note" aria-live="polite"></p>
+          </section>
+          <section class="view" id="repair" hidden>
+            <p class="overline">Startup needs attention</p>
+            <h1>Let’s get your Studio back.</h1>
+            <p class="intro">
+              The voice engine couldn’t start. Your episodes, voices and finished audio are still in
+              place.
+            </p>
+            <div class="failure">
+              <h2 id="failure-title"></h2>
+              <p id="failure-description"></p>
+            </div>
+            <ul class="checks">
+              <li>Episodes & voices<span>Available</span></li>
+              <li>Voice models<span>Verified · no download needed</span></li>
+              <li id="runtime-check"></li>
+            </ul>
+            <details>
+              <summary>View diagnostic details</summary>
+              <pre id="diagnostics"></pre>
+            </details>
+            <div class="safe">
+              <svg aria-hidden="true"><use href="#shield" /></svg
+              ><span id="repair-safe"
+                >Repair changes application files only. It keeps your episodes, saved voices and
+                models.</span
+              >
+            </div>
+            <div class="repair-progress" id="repair-progress" hidden>
+              <span id="repair-stage"></span>
+              <div class="progress"><div id="repair-bar"></div></div>
+            </div>
+            <div class="actions" id="repair-actions">
+              <button class="quiet" id="retry">Try starting again</button
+              ><button class="primary" id="repair-button">Repair voice engine</button>
+            </div>
+            <div class="secondary-actions">
+              <button class="quiet" id="show-logs">View full log</button>
+              <button class="quiet" id="copy-log">Copy log</button>
+            </div>
+          </section>
+          <footer class="footer">
+            <span id="footer-state">Installation · Windows</span><span id="footer-version"></span>
+          </footer>
+        </main>
+      </div>
+    </div>
+
+    <dialog id="log-dialog">
+      <h2 id="log-title">Startup log</h2>
+      <p id="log-description">Captured application and service output.</p>
+      <pre id="full-log"></pre>
+      <form method="dialog" class="buttons">
+        <button type="button" id="copy-log-dialog">Copy log</button>
+        <button class="primary">Close</button>
+      </form>
+    </dialog>
+    <script src="renderer.js"></script>
+  </body>
+</html>

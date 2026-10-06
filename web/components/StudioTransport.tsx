@@ -1,6 +1,14 @@
 "use client";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+
+type Playlist = {
+  src: string | null;
+  readyCount: number;
+  totalCount: number;
+  duration: number;
+  startOffsets: Record<string, number>;
+};
 
 const clock = (seconds: number) =>
   `${Math.floor((seconds || 0) / 60)
@@ -9,21 +17,28 @@ const clock = (seconds: number) =>
     .toString()
     .padStart(2, "0")}`;
 export default function StudioTransport({
-  src,
+  playlist,
   title,
-  onStart,
-  ready,
+  selectedBlockId,
   onPlay,
   stopSignal,
 }: {
-  src: string | null;
+  playlist: Playlist;
   title: string;
-  onStart?: number;
-  ready: boolean;
+  selectedBlockId: string | null;
   onPlay: () => void;
   stopSignal: number;
 }) {
-  const player = useAudioPlayer(src);
+  const [snapshot, setSnapshot] = useState(playlist);
+  const player = useAudioPlayer(snapshot.src);
+  // Finishing takes must not interrupt a preview already playing.
+  // Pausing or ending refreshes the next playback from current selections.
+  useEffect(() => {
+    if (!player.isPlaying) setSnapshot(playlist);
+  }, [playlist.src, playlist.readyCount, playlist.totalCount, player.isPlaying]);
+  const ready = snapshot.readyCount > 0;
+  const partial = snapshot.readyCount < snapshot.totalCount;
+  const onStart = selectedBlockId ? snapshot.startOffsets[selectedBlockId] : undefined;
   useEffect(() => {
     player.pause();
   }, [stopSignal, player.pause]);
@@ -34,11 +49,14 @@ export default function StudioTransport({
         <span role={player.error ? "alert" : undefined}>
           {player.error ||
             (ready
-              ? "Episode playback · selected takes"
-              : "Select a completed take for every block to play the episode")}
+              ? partial
+                ? `Preview · ${snapshot.readyCount}/${snapshot.totalCount} lines ready · ${snapshot.totalCount - snapshot.readyCount} skipped`
+                : "Episode playback · selected takes"
+              : "Generate and select a take to preview the episode")}
         </span>
         {ready && (
           <button
+            disabled={onStart === undefined}
             onClick={() => {
               onPlay();
               player.playFrom(onStart ?? 0);
@@ -55,22 +73,30 @@ export default function StudioTransport({
           onPlay();
           player.toggle();
         }}
-        aria-label={player.isPlaying ? "Pause episode" : "Play episode"}
+        aria-label={
+          player.isPlaying
+            ? partial
+              ? "Pause preview"
+              : "Pause episode"
+            : partial
+              ? "Play preview"
+              : "Play episode"
+        }
       >
         {player.isPlaying ? "Ⅱ" : "▶"}
       </button>
       <time>{clock(player.currentTime)}</time>
       <input
-        aria-label="Episode position"
+        aria-label={partial ? "Preview position" : "Episode position"}
         type="range"
         min={0}
-        max={player.duration || 1}
+        max={player.duration || snapshot.duration || 1}
         step={0.1}
         value={player.currentTime}
         disabled={!ready}
         onChange={(e) => player.seek(Number(e.target.value))}
       />
-      <time>{clock(player.duration)}</time>
+      <time>{clock(player.duration || snapshot.duration)}</time>
       <label className="transport-volume">
         Volume
         <input

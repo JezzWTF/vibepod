@@ -1,14 +1,48 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GenerationJob } from "@/lib/types/generation";
-import type { EpisodeSummary } from "@/lib/types/episode";
+import type {
+  EpisodeAction,
+  EpisodeCounts,
+  EpisodeState,
+  EpisodeSummary,
+} from "@/lib/types/episode";
 import "../studio.css";
 
 const PAGE_SIZE = 24;
+const EPISODE_STATES: { id: EpisodeState; label: string }[] = [
+  { id: "active", label: "Active" },
+  { id: "archived", label: "Archived" },
+  { id: "trashed", label: "Trash" },
+];
+const EPISODE_NOTES: Record<EpisodeState, string> = {
+  active: "",
+  archived: "Archived episodes keep their audio and can be opened or returned to Active.",
+  trashed: "Trash keeps your script, takes and exports. Nothing is automatically erased.",
+};
+const EPISODE_EMPTY: Record<EpisodeState, [string, string]> = {
+  active: [
+    "Your first conversation starts in Studio",
+    "Create an episode and it will be saved here automatically.",
+  ],
+  archived: ["No archived episodes", "Archive finished episodes to keep Active focused."],
+  trashed: ["Trash is empty", "Episodes you remove stay recoverable here."],
+};
+const TOAST: Record<EpisodeAction, string> = {
+  archive: "Episode archived",
+  trash: "Episode moved to Trash",
+  restore: "Episode restored",
+};
 export default function LibraryPage() {
   const [tab, setTab] = useState("episodes"),
     [episodes, setEpisodes] = useState<EpisodeSummary[]>([]),
-    [takes, setTakes] = useState<GenerationJob[]>([]);
+    [takes, setTakes] = useState<GenerationJob[]>([]),
+    [episodeState, setEpisodeState] = useState<EpisodeState>("active"),
+    [counts, setCounts] = useState<EpisodeCounts | null>(null),
+    [menu, setMenu] = useState<string | null>(null),
+    [trashing, setTrashing] = useState<EpisodeSummary | null>(null),
+    [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null),
+    [managing, setManaging] = useState(false);
   const [search, setSearch] = useState(""),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -27,14 +61,16 @@ export default function LibraryPage() {
       try {
         const response = await fetch(
           tab === "episodes"
-            ? "/api/episodes"
+            ? `/api/episodes?state=${episodeState}`
             : `/api/takes?limit=${PAGE_SIZE}&offset=${append ? takes.length : 0}`,
           { cache: "no-store" }
         );
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || data.detail || "Cannot load the library");
-        if (tab === "episodes") setEpisodes(data.items);
-        else {
+        if (tab === "episodes") {
+          setEpisodes(data.items);
+          setCounts(data.counts);
+        } else {
           setTakes((previous) => (append ? [...previous, ...data.items] : data.items));
           setHasMore(data.items.length === PAGE_SIZE);
         }
@@ -45,14 +81,15 @@ export default function LibraryPage() {
         setLoading(false);
       }
     },
-    [tab, takes.length]
+    [tab, episodeState, takes.length]
   );
   useEffect(() => {
     load();
     audio.current?.pause();
     setAudition(null);
     setConfirm(null);
-  }, [tab]);
+    setMenu(null);
+  }, [tab, episodeState]);
   useEffect(() => () => audio.current?.pause(), []);
   function play(id: string) {
     audio.current?.pause();
@@ -87,6 +124,33 @@ export default function LibraryPage() {
       setDeleting(false);
     }
   }
+  async function manage(ep: EpisodeSummary, action: EpisodeAction, inverse: EpisodeAction) {
+    setManaging(true);
+    setError("");
+    setMenu(null);
+    try {
+      const response = await fetch(`/api/episodes/${encodeURIComponent(ep.id)}/lifecycle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, revision: ep.revision }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.error || "Cannot update this episode");
+      const moved = { ...ep, revision: data.revision };
+      setToast({
+        message: TOAST[action],
+        undo: () => {
+          setToast(null);
+          manage(moved, inverse, action);
+        },
+      });
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setManaging(false);
+    }
+  }
   const visibleEpisodes = episodes.filter((e) =>
     e.title.toLowerCase().includes(search.toLowerCase())
   );
@@ -113,9 +177,7 @@ export default function LibraryPage() {
             Studio
           </a>
           <span className="workspace-tab">Library</span>
-          <div className="studio-local">
-            Local workspace <span />
-          </div>
+          <div className="studio-version">{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</div>
         </nav>
         <main className="library-main">
           <p className="studio-eyebrow">Library / Episodes and takes</p>
@@ -139,6 +201,25 @@ export default function LibraryPage() {
               </button>
             ))}
           </div>
+          {tab === "episodes" && (
+            <div className="library-tabs library-states" role="tablist" aria-label="Episode status">
+              {EPISODE_STATES.map(({ id, label }) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={episodeState === id}
+                  disabled={loading}
+                  onClick={() => {
+                    setEpisodeState(id);
+                    setToast(null);
+                  }}
+                >
+                  {label}
+                  {counts && <span className="library-count">{counts[id]}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="library-tools">
             <input
               aria-label={tab === "episodes" ? "Search episodes" : "Search loaded takes"}
@@ -171,23 +252,66 @@ export default function LibraryPage() {
                   </div>
                   <span>{ep.block_count}</span>
                   <time>{new Date(ep.updated_at).toLocaleDateString()}</time>
-                  <a href={`/?episode=${encodeURIComponent(ep.id)}`}>Open →</a>
+                  <div className="library-episode-actions">
+                    {episodeState === "trashed" ? (
+                      <button disabled={managing} onClick={() => manage(ep, "restore", "trash")}>
+                        Restore
+                      </button>
+                    ) : (
+                      <>
+                        <a href={`/?episode=${encodeURIComponent(ep.id)}`}>Open →</a>
+                        <button
+                          className="library-menu-trigger"
+                          aria-label={`Manage ${ep.title}`}
+                          aria-expanded={menu === ep.id}
+                          onClick={() => setMenu(menu === ep.id ? null : ep.id)}
+                        >
+                          ⋯
+                        </button>
+                        {menu === ep.id && (
+                          <div className="library-menu" role="menu">
+                            <button
+                              role="menuitem"
+                              disabled={managing}
+                              onClick={() =>
+                                episodeState === "active"
+                                  ? manage(ep, "archive", "restore")
+                                  : manage(ep, "restore", "archive")
+                              }
+                            >
+                              {episodeState === "active" ? "Archive episode" : "Return to Active"}
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="library-danger"
+                              disabled={managing}
+                              onClick={() => {
+                                setMenu(null);
+                                setTrashing(ep);
+                              }}
+                            >
+                              Move to Trash
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </article>
               ))}
               {!loading && !error && !visibleEpisodes.length && (
                 <div className="studio-empty">
-                  <h2>
-                    {search ? "No matching episodes" : "Your first conversation starts in Studio"}
-                  </h2>
-                  <p>
-                    {search
-                      ? "Try another title."
-                      : "Create an episode and it will be saved here automatically."}
-                  </p>
-                  <a className="studio-primary" href="/">
-                    Open Studio
-                  </a>
+                  <h2>{search ? "No matching episodes" : EPISODE_EMPTY[episodeState][0]}</h2>
+                  <p>{search ? "Try another title." : EPISODE_EMPTY[episodeState][1]}</p>
+                  {episodeState === "active" && !search && (
+                    <a className="studio-primary" href="/">
+                      Open Studio
+                    </a>
+                  )}
                 </div>
+              )}
+              {EPISODE_NOTES[episodeState] && (
+                <p className="studio-muted library-note">{EPISODE_NOTES[episodeState]}</p>
               )}
             </div>
           ) : (
@@ -259,6 +383,50 @@ export default function LibraryPage() {
           )}
         </main>
       </div>
+      {toast && (
+        <div className="library-toast" role="status">
+          <span>{toast.message}</span>
+          <button disabled={managing} onClick={toast.undo}>
+            Undo
+          </button>
+          <button aria-label="Dismiss" onClick={() => setToast(null)}>
+            ×
+          </button>
+        </div>
+      )}
+      {trashing && (
+        <div className="library-dialog-backdrop" onClick={() => setTrashing(null)}>
+          <div
+            className="library-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="trash-title"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.key === "Escape" && setTrashing(null)}
+          >
+            <h2 id="trash-title">Move episode to Trash?</h2>
+            <strong>{trashing.title}</strong>
+            <p>
+              The script, takes and exports stay together. You can restore the episode from Trash.
+            </p>
+            <footer>
+              <button autoFocus onClick={() => setTrashing(null)}>
+                Keep episode
+              </button>
+              <button
+                className="library-danger"
+                onClick={() => {
+                  const ep = trashing;
+                  setTrashing(null);
+                  manage(ep, "trash", "restore");
+                }}
+              >
+                Move to Trash
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,8 @@ The script is the editor: each speaker line owns immutable takes, and a retake r
 - #18: adapter boundary, GPU-only runtime, persistent line takes, cloning and library.
 - #19: episode/cast/script-block editing, generate episode sequentially, select/compare takes, per-line regeneration, full episode playback, reopen persisted episodes.
 - #20: WAV/MP3 export, loudness normalization, metadata.
+- Windows development setup and Electron desktop installer with first-launch setup and repair (see desktop-installation.md and desktop-runtime-direction.md).
+- Episode lifecycle: archive, trash and restore without discarding scripts, takes or exports.
 - Later if wanted: timeline, music beds, SFX, intros, templates.
 
 ## Script and take contracts for #19
