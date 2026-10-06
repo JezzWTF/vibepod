@@ -144,7 +144,17 @@ for entry in entries:
     completed_bytes += entry.size
     progress(entry.rfilename, "verified")
 (args.destination / "spike-source.json").write_text(
-    json.dumps({"repo": args.repo, "revision": info.sha}, indent=2), encoding="utf-8"
+    json.dumps(
+        {
+            "repo": args.repo,
+            "revision": info.sha,
+            # Sizes of the files verified above, so a later launch can spot a missing or
+            # truncated file without hashing gigabytes again.
+            "files": {e.rfilename: e.size for e in entries if e.size},
+        },
+        indent=2,
+    ),
+    encoding="utf-8",
 )
 print(f"Verified checkpoint: {args.destination}", flush=True)
 progress("", "complete")

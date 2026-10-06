@@ -231,6 +231,15 @@ def delete_job(job_id: str) -> bool:
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         if (
+            "episodes" in tables
+            and conn.execute(
+                "SELECT 1 FROM generations g JOIN episodes e ON e.id=g.episode_id "
+                "WHERE g.id=? AND e.lifecycle='trashed'",
+                (job_id,),
+            ).fetchone()
+        ):
+            raise TakeInUse("Restore the episode from Trash before deleting its takes")
+        if (
             "script_blocks" in tables
             and conn.execute(
                 "SELECT 1 FROM script_blocks WHERE selected_take_id=?", (job_id,)

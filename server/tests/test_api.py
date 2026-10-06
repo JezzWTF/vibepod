@@ -141,6 +141,25 @@ class ApiTest(unittest.TestCase):
         active = self.manage(restored, "restore").json()
         self.assertEqual(active["lifecycle"], "active")
 
+    def test_takes_of_a_trashed_episode_cannot_be_deleted_until_it_is_restored(self):
+        FakeAdapter.release.set()
+        episode = self.new_episode()
+        eid, bid = episode["id"], episode["blocks"][0]["id"]
+        first = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        self.wait(first, "complete")
+        spare = self.client.post(f"/episodes/{eid}/blocks/{bid}/generate").json()["id"]
+        take = self.wait(spare, "complete")
+        episode = self.client.get(f"/episodes/{eid}").json()
+        self.assertNotEqual(episode["blocks"][0]["selected_take_id"], spare)
+        trashed = self.manage(episode, "trash").json()
+        refused = self.client.delete(f"/takes/{spare}")
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn("Trash", refused.json()["detail"])
+        self.assertTrue(Path(take["audio_path"]).exists())
+        self.manage(trashed, "restore")
+        self.assertEqual(self.client.delete(f"/takes/{spare}").status_code, 200)
+        self.assertFalse(Path(take["audio_path"]).exists())
+
     def test_trash_blocks_work_and_rejects_late_generation_and_export(self):
         episode = self.new_episode()
         eid, bid = episode["id"], episode["blocks"][0]["id"]

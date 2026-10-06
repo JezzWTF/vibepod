@@ -233,3 +233,59 @@ test("graphics cards with 8 GB or more are accepted and smaller ones are refused
     clean(root);
   }
 });
+test("startup checks every model file against the recorded sizes", async () => {
+  const { root, resources } = fixture();
+  try {
+    const settings = {
+      models: path.join(root, "Models"),
+      library: path.join(root, "Library"),
+      design: false,
+    };
+    const base = path.join(settings.models, "qwen-base");
+    const files = { "config.json": 2, "tokenizer.json": 5, "model.safetensors": 8 };
+    const write = (name, size) => fs.writeFileSync(path.join(base, name), "x".repeat(size));
+    fs.mkdirSync(base, { recursive: true });
+    fs.mkdirSync(settings.library);
+    const manifest = (extra = {}) =>
+      fs.writeFileSync(
+        path.join(base, "spike-source.json"),
+        JSON.stringify({ revision: "fd4b254389122332181a7c3db7f27e918eec64e3", ...extra })
+      );
+    for (const [name, size] of Object.entries(files)) write(name, size);
+    atomicJson(path.join(root, "installation.json"), {
+      python: path.join(root, "python.exe"),
+      settings,
+      manifestHash: createHash("sha256").update("locked").digest("hex"),
+    });
+    const c = new DesktopController({
+      root,
+      resources,
+      runner: async () => "NVIDIA GPU, 12288, 600.1",
+    });
+    manifest({ files });
+    await c.check();
+    assert.equal(c.state.view, "ready");
+
+    fs.rmSync(path.join(base, "tokenizer.json"));
+    await c.check();
+    assert.equal(c.state.view, "repair");
+    assert.equal(c.state.error.kind, "download");
+    assert.match(c.state.error.message, /missing or incomplete/);
+
+    write("tokenizer.json", 5);
+    write("model.safetensors", 3);
+    await c.check();
+    assert.equal(c.state.error.kind, "download", "a truncated weights file is caught");
+
+    write("model.safetensors", 8);
+    await c.check();
+    assert.equal(c.state.view, "ready");
+
+    fs.rmSync(path.join(base, "tokenizer.json"));
+    manifest();
+    await c.check();
+    assert.equal(c.state.view, "ready", "a folder from an older download keeps the basic check");
+  } finally {
+    clean(root);
+  }
+});

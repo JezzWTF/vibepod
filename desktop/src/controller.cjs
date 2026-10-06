@@ -47,6 +47,26 @@ function validateLocations(settings, root) {
     design: Boolean(settings.design),
   };
 }
+// True unless the model folder is the pinned revision with every file at its recorded size.
+// Downloads record each file's size in spike-source.json once everything has been hash-verified;
+// folders from older downloads only have the revision marker, so they get the basic check.
+function modelIncomplete(dir, revision) {
+  const source = readJson(path.join(dir, "spike-source.json"));
+  if (
+    source?.revision !== revision ||
+    !fs.existsSync(path.join(dir, "config.json")) ||
+    !fs.readdirSync(dir).some((file) => file.endsWith(".safetensors"))
+  )
+    return true;
+  return Object.entries(source.files ?? {}).some(([name, size]) => {
+    const file = path.join(dir, name);
+    try {
+      return !inside(dir, file) || fs.statSync(file).size !== size;
+    } catch {
+      return true;
+    }
+  });
+}
 async function availableBytes(location) {
   let current = location;
   while (!fs.existsSync(current)) {
@@ -223,14 +243,9 @@ class DesktopController {
         for (const [variant, revision, folder] of MODELS) {
           if (variant === "VoiceDesign" && !this.state.settings.design) continue;
           const dir = path.join(this.state.settings.models, folder);
-          const source = readJson(path.join(dir, "spike-source.json"));
-          if (
-            source?.revision !== revision ||
-            !fs.existsSync(path.join(dir, "config.json")) ||
-            !fs.readdirSync(dir).some((file) => file.endsWith(".safetensors"))
-          ) {
+          if (modelIncomplete(dir, revision)) {
             const error = new Error(
-              "Required voice model files are missing. Resume model setup to verify and restore them."
+              "Required voice model files are missing or incomplete. Resume model setup to verify and restore them."
             );
             error.kind = "download";
             throw error;
