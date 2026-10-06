@@ -9,6 +9,8 @@ import VoiceDialog from "@/components/VoiceDialog";
 import ExportDialog from "@/components/ExportDialog";
 import WriteDialog from "@/components/WriteDialog";
 import SourcesDialog, { sourceCount } from "@/components/SourcesDialog";
+import GuardedLink from "@/components/GuardedLink";
+import { setLeaveGuard } from "@/lib/navigation-guard";
 import "./studio.css";
 import "./write.css";
 
@@ -27,6 +29,12 @@ export default function StudioPage() {
     [mediaError, setMediaError] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
   const ep = studio.episode;
+  const saveRef = useRef(studio.save);
+  saveRef.current = studio.save;
+  useEffect(() => {
+    setLeaveGuard(() => saveRef.current());
+    return () => setLeaveGuard(null);
+  }, []);
   async function applyScript() {
     const job = writer.job;
     if (!job) return false;
@@ -104,11 +112,6 @@ export default function StudioPage() {
         Skip to script
       </a>
       <header className="studio-topbar">
-        <div className="studio-brand">
-          <span className="studio-mark">▥</span>
-          <strong>VibePod</strong>
-          <span>Studio</span>
-        </div>
         <div className="studio-breadcrumb">
           Episodes <span>/</span> {ep?.title ?? "Workspace"}
         </div>
@@ -141,34 +144,6 @@ export default function StudioPage() {
       </header>
       <div className="studio-workspace">
         <nav className="studio-navigation" aria-label="Episode workspace">
-          <p className="studio-eyebrow">Workspace</p>
-          <span className="workspace-tab">
-            Episodes <span>{studio.recent.length.toString().padStart(2, "0")}</span>
-          </span>
-          <a
-            className="studio-archive"
-            href="/library"
-            onClick={async (e) => {
-              e.preventDefault();
-              try {
-                await studio.save();
-                window.location.assign("/library");
-              } catch {}
-            }}
-          >
-            Saved audio library →
-          </a>
-          <button
-            className="studio-archive"
-            onClick={() => {
-              audio.current?.pause();
-              setAudition(null);
-              setStopSignal((v) => v + 1);
-              setVoiceOpen(true);
-            }}
-          >
-            + Add a voice
-          </button>
           <div className="studio-nav-heading">
             <span>Recent episodes</span>
             <button
@@ -203,7 +178,22 @@ export default function StudioPage() {
           </div>
           {ep && (
             <>
-              <p className="studio-eyebrow cast-heading">Episode cast</p>
+              <div className="studio-nav-heading cast-heading">
+                <span>Episode cast</span>
+                <span className="cast-tools">
+                  <button
+                    onClick={() => {
+                      audio.current?.pause();
+                      setAudition(null);
+                      setStopSignal((v) => v + 1);
+                      setVoiceOpen(true);
+                    }}
+                  >
+                    + Voice
+                  </button>
+                  <GuardedLink href="/voices">Manage</GuardedLink>
+                </span>
+              </div>
               {cast.map((speaker, i) => (
                 <label className="cast-row" key={speaker}>
                   <span className={`cast-avatar cast-${i % 2}`}>
@@ -229,7 +219,6 @@ export default function StudioPage() {
               ))}
             </>
           )}
-          <div className="studio-version">{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</div>
         </nav>
         <main id="script" className="studio-script">
           {ep ? (

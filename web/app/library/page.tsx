@@ -160,25 +160,9 @@ export default function LibraryPage() {
   return (
     <div className="studio-app studio-library">
       <header className="studio-topbar">
-        <div className="studio-brand">
-          <span className="studio-mark">▥</span>
-          <strong>VibePod</strong>
-          <span>Studio</span>
-        </div>
         <div className="studio-breadcrumb">Library</div>
-        <a className="studio-secondary library-back" href="/">
-          Back to Studio
-        </a>
       </header>
       <div className="library-workspace">
-        <nav className="studio-navigation" aria-label="Workspace">
-          <p className="studio-eyebrow">Workspace</p>
-          <a className="studio-archive" href="/">
-            Studio
-          </a>
-          <span className="workspace-tab">Library</span>
-          <div className="studio-version">{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</div>
-        </nav>
         <main className="library-main">
           <p className="studio-eyebrow">Library / Episodes and takes</p>
           <h1>Your conversations, kept.</h1>

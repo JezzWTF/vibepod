@@ -1,0 +1,138 @@
+:root {
+  --rail-width: 84px;
+}
+.app-frame {
+  display: flex;
+  min-height: 100dvh;
+}
+.app-view {
+  flex: 1;
+  min-width: 0;
+}
+.app-rail {
+  position: sticky;
+  top: 0;
+  flex: 0 0 var(--rail-width);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 18px 8px;
+  gap: 24px;
+  background: #191c21;
+  border-right: 1px solid #34373e;
+  color: #a0a4ac;
+  font-family: Geist, "Segoe UI", sans-serif;
+  z-index: 5;
+}
+.app-rail ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.app-rail a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color 0.16s,
+    color 0.16s;
+}
+.app-rail a:hover {
+  background: #24282d;
+  color: #e8e9eb;
+}
+.app-rail a[aria-current="page"] {
+  background: #2a2e34;
+  border-color: #3d443f;
+  color: #aed5bf;
+}
+.app-rail a:focus-visible {
+  outline: 2px solid #aed5bf;
+  outline-offset: 2px;
+}
+.app-rail svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.app-rail-brand {
+  flex-direction: row !important;
+  justify-content: center;
+  padding: 0 !important;
+}
+.app-rail-brand .studio-mark {
+  color: #25372c;
+  background: #aed5bf;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 22px;
+}
+.app-rail-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  text-align: center;
+}
+.app-rail-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.app-rail-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #737982;
+}
+.app-rail-status.is-online i {
+  background: #aed5bf;
+}
+.app-rail-status.is-offline i {
+  background: #e5a79c;
+}
+@media (max-width: 640px) {
+  :root {
+    --rail-width: 0px;
+  }
+  .app-frame {
+    flex-direction: column;
+  }
+  .app-rail {
+    flex: none;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    gap: 12px;
+    border-right: 0;
+    border-bottom: 1px solid #34373e;
+  }
+  .app-rail ul {
+    flex-direction: row;
+  }
+  .app-rail a {
+    flex-direction: row;
+    padding: 8px 10px;
+  }
+  .app-rail-footer span:last-child {
+    display: none;
+  }
+}
