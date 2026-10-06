@@ -57,7 +57,10 @@ else {
           sandbox: true,
         },
       });
-      window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      window.webContents.setWindowOpenHandler(({ url }) => {
+        if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+        return { action: "deny" };
+      });
       window.webContents.on("will-navigate", (event, url) => {
         if (
           url !== pathToFileURL(ui).href &&

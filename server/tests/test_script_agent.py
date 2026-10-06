@@ -57,6 +57,13 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(len(problems), 2)
         self.assertIn("unknown speaker", problems[0])
 
+    def test_speaker_names_are_not_limited_to_ascii_letters(self):
+        names = ["Émile", "李雷", "2nd Host"]
+        text = "\n".join(f"{name}: Hello there." for name in names)
+        blocks, problems = parse(text, names)
+        self.assertEqual(problems, [])
+        self.assertEqual([b.speaker for b in blocks], names)
+
     def test_long_line_is_a_problem(self):
         _, problems = parse("Alice: " + "word " * 200, ["Alice"])
         self.assertIn("split it", problems[0])
@@ -155,6 +162,72 @@ class PipelineTest(unittest.TestCase):
         cancel.set()
         with self.assertRaises(Cancelled):
             Pipeline(FakeProvider(), self.brief, self.dir, cancel=cancel).run()
+
+
+class ModelNameTest(unittest.TestCase):
+    def test_only_plain_model_names_are_accepted(self):
+        for ok in ("gpt-5.5", "llama3.1:8b", "org/model@v1", "claude-sonnet-5-5"):
+            self.assertEqual(providers.make_provider("codex", ok).model, ok)
+        for bad in ("x&whoami", "a b", 'q"r', "m|n", "m;n", "$(x)", "a" * 101):
+            with self.subTest(model=bad), self.assertRaises(ProviderError):
+                providers.make_provider("codex", bad)
+
+
+class OllamaCancelTest(unittest.TestCase):
+    def test_cancel_returns_promptly_while_the_model_is_still_answering(self):
+        import http.server
+        import time
+
+        release = threading.Event()
+
+        class Slow(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                release.wait(20)
+                try:
+                    self.send_response(200)
+                    self.end_headers()
+                except OSError:
+                    pass
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.addCleanup(release.set)
+        cancel = threading.Event()
+        threading.Timer(0.5, cancel.set).start()
+        provider = providers.Ollama("m", f"http://127.0.0.1:{server.server_port}")
+        started = time.monotonic()
+        with self.assertRaises(Cancelled):
+            provider.run("hi", timeout=30, cancel=cancel)
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_a_timeout_is_reported_without_waiting_for_the_model(self):
+        import http.server
+        import time
+
+        release = threading.Event()
+
+        class Slow(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                release.wait(20)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.addCleanup(release.set)
+        provider = providers.Ollama("m", f"http://127.0.0.1:{server.server_port}")
+        started = time.monotonic()
+        with self.assertRaisesRegex(ProviderError, "Timed out"):
+            provider.run("hi", timeout=1)
+        self.assertLess(time.monotonic() - started, 6)
 
 
 class ProcessTest(unittest.TestCase):

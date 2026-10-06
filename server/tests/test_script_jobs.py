@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 import generation_store as store
 import tts_server as server
 import voice_store
-from script_agent import api, jobs
+from script_agent import api, jobs, providers
 from script_agent.providers import Cancelled
 
 OUTLINE = {
@@ -26,6 +26,7 @@ class FakeProvider:
     supports_web = True
     gate = threading.Event()
     hold = False
+    fence = False
 
     def run(self, prompt, *, web=False, timeout=600, cancel=None):
         if FakeProvider.hold:
@@ -33,7 +34,9 @@ class FakeProvider:
                 if cancel and cancel.is_set():
                     raise Cancelled("Cancelled")
         if "Reply with JSON only" in prompt:
-            return json.dumps(OUTLINE)
+            text = json.dumps(OUTLINE)
+            fenced = "Sure!\n```json\n" + text + "\n```"
+            return fenced if FakeProvider.fence else text
         if "Search the web" in prompt:
             return "- Tea began in China (https://example.com/tea)"
         return "Alice: Tea began in China.\nFrank: Really? How long ago?"
@@ -44,6 +47,7 @@ class JobsTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         FakeProvider.hold = False
+        FakeProvider.fence = False
         FakeProvider.gate.clear()
         self.patches = [
             patch.object(store, "DB_PATH", root / "db" / "test.db"),
@@ -146,6 +150,21 @@ class JobsTest(unittest.TestCase):
             },
         ).json()
         self.assertEqual(again["sources"], result["sources"])
+
+    def test_status_and_apply_survive_an_outline_wrapped_in_a_code_fence(self):
+        FakeProvider.fence = True
+        jid = self.start()
+        job = self.wait(jid, "done")
+        self.assertEqual(job["outline"], {"done": True, "sections": 1})
+        self.assertEqual(self.client.get("/script-jobs/current").json()["id"], jid)
+        self.assertEqual(self.client.post(f"/script-jobs/{jid}/apply", json={}).status_code, 200)
+
+    def test_a_model_name_with_shell_characters_is_refused(self):
+        real = patch.object(api, "make_provider", providers.make_provider)
+        for model in ("x&whoami", "a b", 'q"r', "m|n", "m;n", "$(x)"):
+            with self.subTest(model=model), real:
+                body = {"topic": "Tea", "provider": "codex", "model": model}
+                self.assertEqual(self.client.post("/script-jobs", json=body).status_code, 422)
 
     def test_one_job_at_a_time_cancel_and_resume(self):
         FakeProvider.hold = True

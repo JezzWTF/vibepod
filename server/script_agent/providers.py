@@ -3,14 +3,17 @@ machine, exactly as typing the prompt into the app would. This code never reads 
 """
 
 import contextlib
+import http.client
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Protocol
@@ -210,19 +213,50 @@ class Ollama:
                 "messages": [{"role": "user", "content": prompt}],
             }
         ).encode()
-        request = urllib.request.Request(
-            f"{self.host}/api/chat", body, {"Content-Type": "application/json"}
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                return json.load(response)["message"]["content"]
-        except urllib.error.HTTPError as exc:
-            raise ProviderError(exc.read().decode(errors="replace")[:400]) from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise ProviderError(f"Cannot reach Ollama at {self.host}: {exc}") from exc
+        parsed = urllib.parse.urlparse(self.host)
+        conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=timeout)
+        box: dict = {}
+
+        def call() -> None:
+            try:
+                conn.request("POST", "/api/chat", body, {"Content-Type": "application/json"})
+                response = conn.getresponse()
+                data = response.read()
+                if response.status >= 400:
+                    box["error"] = ProviderError(data.decode(errors="replace")[:400])
+                else:
+                    box["text"] = json.loads(data)["message"]["content"]
+            except Exception as exc:
+                box["error"] = exc
+
+        worker = threading.Thread(target=call, daemon=True)
+        worker.start()
+        deadline = time.monotonic() + timeout
+        while worker.is_alive():
+            worker.join(0.5)
+            if cancel and cancel.is_set():
+                conn.close()  # closing the socket also stops Ollama generating
+                raise Cancelled("Cancelled")
+            if time.monotonic() > deadline:
+                conn.close()
+                raise ProviderError(f"Timed out after {int(timeout)} s")
+        error = box.get("error")
+        if isinstance(error, ProviderError):
+            raise error
+        if isinstance(error, TimeoutError):
+            raise ProviderError(f"Timed out after {int(timeout)} s") from error
+        if error:
+            raise ProviderError(f"Cannot reach Ollama at {self.host}: {error}") from error
+        return box["text"]
+
+
+_MODEL_NAME = re.compile(r"[A-Za-z0-9._:/+@-]{1,100}")
 
 
 def make_provider(name: str, model: str | None = None) -> Provider:
+    # The model is passed on a command line, and on Windows through cmd.exe for .CMD shims.
+    if model and not _MODEL_NAME.fullmatch(model):
+        raise ProviderError("The model name may only use letters, digits and . _ : / + @ -")
     if name == "claude":
         return ClaudeCli(model)
     if name == "codex":

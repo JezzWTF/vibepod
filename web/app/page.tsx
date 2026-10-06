@@ -31,7 +31,8 @@ export default function StudioPage() {
     const job = writer.job;
     if (!job) return false;
     try {
-      const saved = job.target === "this" && ep ? await studio.save() : null;
+      // Save first so adopting the new episode cannot drop unsaved edits to the current one.
+      const saved = ep ? await studio.save() : null;
       const result =
         job.target === "this" && saved
           ? await writer.apply(saved.id, saved.revision)

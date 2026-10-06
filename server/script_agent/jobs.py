@@ -12,7 +12,7 @@ from pathlib import Path
 from generation_store import DATA_DIR, _connect
 
 from .pipeline import Pipeline, PipelineError
-from .prompts import Brief
+from .prompts import Brief, parse_outline
 from .providers import Cancelled, ProviderError, make_provider
 
 RUNS = DATA_DIR / "script_runs"
@@ -88,7 +88,11 @@ def get(jid: str) -> dict | None:
     directory = run_dir(jid)
     notes = _read(directory / "research.md")
     outline = _read(directory / "outline.json")
-    sections = json.loads(outline)["sections"] if outline else []
+    try:
+        # The cached reply is the model's raw text, which may be wrapped in prose or a code fence.
+        sections = parse_outline(outline)["sections"] if outline else []
+    except (ValueError, TypeError, AttributeError):
+        sections = []
     drafted = _sections(directory)
     lines = [line for text in drafted for line in text.splitlines() if line.strip()]
     job.update(

@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 
 MAX_BLOCK_CHARS = 700
-_LINE = re.compile(r"^\s*\**\[?([A-Za-z][\w .'-]{0,38}?)\]?\**\s*:\s*(.+)$")
+_LINE = re.compile(r"^\s*\**\[?(\w[\w .'-]{0,38}?)\]?\**\s*:\s*(.+)$")
 _FENCE = re.compile(r"^```\w*\s*$")
 
 

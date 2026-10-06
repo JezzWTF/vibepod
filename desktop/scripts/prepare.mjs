@@ -99,6 +99,12 @@ fs.mkdirSync(path.join(destination, "server/spike"), { recursive: true });
 for (const file of fs.readdirSync(path.join(root, "server")))
   if (file.endsWith(".py") || ["pyproject.toml", "uv.lock"].includes(file))
     fs.copyFileSync(path.join(root, "server", file), path.join(destination, "server", file));
+// The backend imports this package, so a runtime without it cannot start.
+fs.rmSync(path.join(destination, "server/script_agent"), { recursive: true, force: true });
+fs.cpSync(path.join(root, "server/script_agent"), path.join(destination, "server/script_agent"), {
+  recursive: true,
+  filter: (source) => path.basename(source) !== "__pycache__",
+});
 fs.copyFileSync(
   path.join(root, "server/spike/download.py"),
   path.join(destination, "server/spike/download.py")
