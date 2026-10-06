@@ -15,6 +15,7 @@ from .prompts import Brief
 from .providers import ProviderError, make_provider, status
 
 router = APIRouter()
+_slot = threading.Lock()
 Provider = Literal["claude", "codex", "ollama"]
 MAX_BLOCKS = episodes.MAX_BLOCKS
 
@@ -86,7 +87,6 @@ def providers():
 
 @router.post("/script-jobs", status_code=201)
 def create_job(body: JobRequest, request: Request):
-    _require_idle(request)
     if body.provider == "ollama" and not body.model:
         raise HTTPException(422, "Choose an Ollama model")
     try:
@@ -101,8 +101,10 @@ def create_job(body: JobRequest, request: Request):
         angle=body.angle.strip(),
         notes=body.notes.strip(),
     )
-    jid = jobs.create(brief, body.provider, body.model, body.review, body.target)
-    _submit(request, jid)
+    with _slot:  # check and reserve together, or two requests could both pass the check
+        _require_idle(request)
+        jid = jobs.create(brief, body.provider, body.model, body.review, body.target)
+        _submit(request, jid)
     return _job(jid)
 
 
@@ -130,11 +132,17 @@ def resume_job(jid: str, body: ResumeRequest, request: Request):
     job = _job(jid)
     if job["status"] not in ("error", "cancelled"):
         raise HTTPException(409, "Only a stopped script can be resumed")
-    _require_idle(request)
     if body.provider:
-        jobs.update(jid, provider=body.provider, model=body.model)
-    jobs.update(jid, status="queued", error=None)
-    _submit(request, jid)
+        try:
+            make_provider(body.provider, body.model)
+        except ProviderError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    with _slot:
+        _require_idle(request)
+        if body.provider:
+            jobs.update(jid, provider=body.provider, model=body.model)
+        jobs.update(jid, status="queued", error=None)
+        _submit(request, jid)
     return _job(jid)
 
 

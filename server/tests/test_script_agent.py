@@ -146,6 +146,20 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual([b.text for b in blocks], ["Short."])
         self.assertIn("too long", provider.prompts[-1])
 
+    def test_a_structurally_invalid_outline_is_discarded_so_resume_asks_again(self):
+        replies = [
+            '{"sections": [null]}',
+            '{"sections": ["x"]}',
+            '{"sections": [{"heading": "h", "blocks": [1]}]}',
+            "[1, 2]",
+        ]
+        for index, reply in enumerate(replies):
+            with self.subTest(reply=reply):
+                directory = self.dir / str(index)
+                with self.assertRaises(PipelineError):
+                    Pipeline(FakeProvider(["Notes", reply]), self.brief, directory).run()
+                self.assertFalse((directory / "outline.json").exists())
+
     def test_non_searching_provider_needs_notes(self):
         with self.assertRaises(PipelineError):
             Pipeline(FakeProvider(web=False), self.brief, self.dir).run()

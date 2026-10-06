@@ -148,7 +148,8 @@ export default function WriteDialog({
     [notes, setNotes] = useState(""),
     [review, setReview] = useState(false),
     [target, setTarget] = useState<"new" | "this">("new"),
-    [resumeWith, setResumeWith] = useState<ScriptProviderId | null>(null);
+    [resumeWith, setResumeWith] = useState<ScriptProviderId | null>(null),
+    [resumeModel, setResumeModel] = useState("");
   useEffect(() => {
     if (open) {
       dialog.current?.showModal();
@@ -436,6 +437,24 @@ export default function WriteDialog({
                       </button>
                     ))}
                 </div>
+                {resumeProvider === "ollama" && (
+                  <label className="write-spaced">
+                    Ollama model
+                    <input
+                      list="ollama-models"
+                      placeholder="llama3.1"
+                      value={resumeModel}
+                      onChange={(e) => setResumeModel(e.target.value)}
+                    />
+                    <datalist id="ollama-models">
+                      {providers
+                        .find((p) => p.id === "ollama")
+                        ?.models.map((m) => (
+                          <option key={m} value={m} />
+                        ))}
+                    </datalist>
+                  </label>
+                )}
               </div>
             )}
           </>
@@ -498,9 +517,20 @@ export default function WriteDialog({
               <button onClick={onClose}>Close</button>
               <button
                 className="studio-primary"
-                disabled={busy || providers.find((p) => p.id === resumeProvider)?.state !== "ready"}
+                disabled={
+                  busy ||
+                  providers.find((p) => p.id === resumeProvider)?.state !== "ready" ||
+                  (resumeProvider === "ollama" && !resumeModel.trim())
+                }
                 onClick={() =>
-                  script.resume(resumeProvider, resumeProvider === job.provider ? job.model : null)
+                  script.resume(
+                    resumeProvider,
+                    resumeProvider === "ollama"
+                      ? resumeModel.trim()
+                      : resumeProvider === job.provider
+                        ? job.model
+                        : null
+                  )
                 }
               >
                 Resume

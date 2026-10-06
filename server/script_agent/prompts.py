@@ -115,11 +115,16 @@ def parse_outline(text: str) -> dict:
     if start < 0 or end < start:
         raise ValueError("The outline reply contained no JSON")
     data = json.loads(text[start : end + 1])
-    sections = data.get("sections")
+    sections = data.get("sections") if isinstance(data, dict) else None
     if not isinstance(sections, list) or not sections:
         raise ValueError("The outline had no sections")
     for item in sections:
-        item["blocks"] = max(2, int(item.get("blocks", 8)))
+        if not isinstance(item, dict):
+            raise ValueError("A section in the outline is not an object")
+        try:
+            item["blocks"] = max(2, int(item.get("blocks", 8)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("A section has an invalid block count") from exc
         item.setdefault("summary", "")
         if not item.get("heading"):
             raise ValueError("A section is missing its heading")

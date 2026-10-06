@@ -166,6 +166,27 @@ class JobsTest(unittest.TestCase):
                 body = {"topic": "Tea", "provider": "codex", "model": model}
                 self.assertEqual(self.client.post("/script-jobs", json=body).status_code, 422)
 
+    def test_simultaneous_requests_start_only_one_job(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        FakeProvider.hold = True
+
+        def post(_):
+            return self.client.post("/script-jobs", json={"topic": "Tea"}).status_code
+
+        with ThreadPoolExecutor(8) as pool:
+            codes = list(pool.map(post, range(8)))
+        self.assertEqual(sorted(codes), [201] + [409] * 7)
+
+    def test_resuming_with_ollama_needs_a_model(self):
+        with patch.object(FakeProvider, "run", side_effect=api.ProviderError("usage limit")):
+            jid = self.start()
+            self.wait(jid, "error")
+        with patch.object(api, "make_provider", providers.make_provider):
+            refused = self.client.post(f"/script-jobs/{jid}/resume", json={"provider": "ollama"})
+            self.assertEqual(refused.status_code, 422)
+            self.assertEqual(self.client.get(f"/script-jobs/{jid}").json()["status"], "error")
+
     def test_one_job_at_a_time_cancel_and_resume(self):
         FakeProvider.hold = True
         jid = self.start()
