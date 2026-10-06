@@ -1,10 +1,11 @@
-const { app, BrowserWindow, clipboard, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, clipboard, ipcMain, dialog, screen, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { DesktopController } = require("./controller.cjs");
 const { installCrashLogging } = require("./crash-log.cjs");
+const { loadWindowState, trackWindowState } = require("./window-state.cjs");
 let window,
   controller,
   quitting = false,
@@ -41,10 +42,16 @@ else {
             .readFileSync(path.join(repository, ".vibepod/config.json"), "utf8")
             .replace(/^\uFEFF/, "")
         );
+      const windowStateFile = path.join(app.getPath("userData"), "window-state.json");
+      const savedWindow = loadWindowState(
+        windowStateFile,
+        screen.getAllDisplays().map((display) => display.workArea)
+      );
       window = new BrowserWindow({
         show: !smoke,
-        width: 1060,
-        height: 870,
+        width: savedWindow?.width ?? 1060,
+        height: savedWindow?.height ?? 870,
+        ...(savedWindow?.x !== undefined && { x: savedWindow.x, y: savedWindow.y }),
         minWidth: 800,
         minHeight: 720,
         backgroundColor: "#17191d",
@@ -58,6 +65,8 @@ else {
           sandbox: true,
         },
       });
+      if (savedWindow?.maximized) window.maximize();
+      trackWindowState(window, windowStateFile);
       window.webContents.setWindowOpenHandler(({ url }) => {
         if (/^https?:\/\//i.test(url)) shell.openExternal(url);
         return { action: "deny" };
