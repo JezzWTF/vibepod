@@ -25,9 +25,10 @@ A quiet, dark, flat workspace for writing and auditioning. Surfaces are separate
 
 ## Layout
 
-- Top bar with brand and breadcrumb; left workspace navigation (Studio, Library); the script is the main column, with the take inspector and transport anchored around it. The transport height is the `--studio-transport-height` token.
+- A slim global rail (Studio, Library, Voices, engine status) on every page; each page has a top bar with a breadcrumb and its primary actions. In Studio the episode list and cast sit beside the script, with the take inspector and transport anchored around it. The transport height is the `--studio-transport-height` token and the rail width is `--rail-width`.
+- Voices: a table of voices with play, edit, delete, and where each is cast. Deleting a voice leaves its blocks unassigned; existing takes keep their audio.
 - Library: tabs (Episodes / All takes), an episode status tab row (Active, Archived, Trash, each with a count), search, and a table of rows with a trailing action area.
-- Narrow widths collapse the navigation and tables; no horizontal page scroll.
+- Narrow widths turn the rail into a top bar and collapse tables; no horizontal page scroll.
 
 ## Components
 

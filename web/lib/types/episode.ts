@@ -1,6 +1,16 @@
 import type { GenerationJob } from "./generation";
 export const MAX_BLOCKS = 500;
-export type Voice = { id: string; name: string; kind: string };
+export type Voice = {
+  id: string;
+  name: string;
+  kind: string;
+  transcript?: string;
+  description?: string;
+};
+export type VoiceUsage = {
+  blocks: number;
+  episodes: { id: string; title: string; lifecycle: string }[];
+};
 export type ScriptBlock = {
   id?: string;
   speaker: string;

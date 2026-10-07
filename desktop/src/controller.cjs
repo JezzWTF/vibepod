@@ -492,7 +492,7 @@ class DesktopController {
   async start() {
     if (this.state.busy || !this.config) throw new Error("Finish setup before opening the Studio.");
     this.emit({
-      view: "install",
+      view: "launch",
       busy: true,
       stage: "Starting your Studio",
       download: null,

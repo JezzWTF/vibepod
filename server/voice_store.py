@@ -1,6 +1,7 @@
 """Reusable reference voices, independent of the model implementation."""
 
 import json
+import shutil
 import uuid
 
 import numpy as np
@@ -49,3 +50,25 @@ def save_voice(name, samples, rate, transcript="", kind="clone", description="")
     metadata.write_text(json.dumps(voice), encoding="utf-8")
     metadata.replace(directory / "voice.json")
     return voice
+
+
+def update_voice(voice_id, name, transcript, description):
+    voice = get_voice(voice_id)
+    if not voice:
+        return None
+    name = name.strip()
+    if not name:
+        raise ValueError("Enter a voice name")
+    voice.update(name=name, transcript=transcript, description=description)
+    directory = ROOT / voice_id
+    metadata = directory / "voice.tmp"
+    metadata.write_text(json.dumps(voice), encoding="utf-8")
+    metadata.replace(directory / "voice.json")
+    return voice
+
+
+def delete_voice(voice_id):
+    if not get_voice(voice_id):
+        return False
+    shutil.rmtree(ROOT / voice_id)
+    return True

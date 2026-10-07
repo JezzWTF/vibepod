@@ -1,0 +1,132 @@
+.voices-main {
+  padding: 48px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.voices-main h1 {
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  margin: 18px 0 28px;
+}
+.voices-add {
+  margin-left: auto;
+}
+.voices-table-heading,
+.voice-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 220px 150px;
+  gap: 24px;
+  align-items: center;
+}
+.voices-table-heading {
+  color: #a0a4ac;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 24px 0 12px;
+  border-bottom: 1px solid #34373e;
+}
+.voices-table-heading > span:first-child {
+  grid-column: 2;
+}
+.voice-row {
+  border-bottom: 1px solid #34373e;
+  padding: 20px 0;
+}
+.voice-play {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #444a52;
+  border-radius: 50%;
+  color: #aed5bf;
+  font-size: 12px;
+  padding: 0;
+}
+.voice-info {
+  min-width: 0;
+}
+.voice-info strong {
+  margin-right: 10px;
+}
+.voice-kind {
+  font-size: 11px;
+  color: #a0a4ac;
+  border: 1px solid #444a52;
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+.voice-info p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #a0a4ac;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-usage {
+  font-size: 12px;
+  min-width: 0;
+}
+.voice-usage small {
+  display: block;
+  color: #a0a4ac;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+}
+.voice-actions button {
+  font-size: 12px;
+}
+.voice-delete {
+  color: #efb3b3;
+}
+.voices-empty {
+  padding: 64px 0;
+  text-align: center;
+}
+.voices-empty h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.voices-empty p {
+  color: #a0a4ac;
+  margin: 0 0 20px;
+}
+@media (max-width: 900px) {
+  .voices-main {
+    padding: 30px 24px;
+  }
+  .voices-table-heading {
+    display: none;
+  }
+  .voice-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+    row-gap: 10px;
+  }
+  .voice-usage,
+  .voice-actions {
+    grid-column: 2;
+  }
+  .voice-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 640px) {
+  .voices-main {
+    padding: 24px 16px;
+  }
+}
+dialog.library-dialog {
+  color: #e8e9eb;
+  margin: auto;
+}
+dialog.library-dialog::backdrop {
+  background: #000a;
+}

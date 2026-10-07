@@ -20,13 +20,19 @@ function render(state) {
   current = state;
   $("launch-note").textContent = "";
   const view =
-    state.view === "checking" ? "install" : state.view === "studio" ? "ready" : state.view;
+    state.view === "checking" ? "launch" : state.view === "studio" ? "ready" : state.view;
   document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== view));
   if (view !== previousView) {
     document.querySelector(`#${view} h1`)?.focus({ preventScroll: true });
     previousView = view;
   }
-  const active = { setup: 1, install: 2, ready: 3, repair: 1 }[view];
+  const active = {
+    setup: 1,
+    install: 2,
+    ready: 3,
+    repair: 1,
+    launch: state.view === "launch" ? 3 : 0,
+  }[view];
   document.querySelector(".steps").innerHTML = (
     view === "repair"
       ? ["Check installation", "Repair engine", "Verify", "Open Studio"]
@@ -67,12 +73,12 @@ function render(state) {
   $("begin").disabled = state.busy;
   $("install").querySelector("h1").textContent = state.repair
     ? "Restoring your Studio."
-    : state.component === "startup"
-      ? "Opening your Studio."
-      : state.view === "checking"
-        ? "Checking your installation."
-        : "Your Studio is taking shape.";
+    : "Your Studio is taking shape.";
   $("install").querySelector(".intro").textContent = state.stage;
+  $("launch").querySelector("h1").textContent =
+    state.view === "launch" ? "Opening your Studio." : "Checking your installation.";
+  $("launch-overline").textContent = state.view === "launch" ? "Opening" : "Starting up";
+  $("launch").querySelector(".intro").textContent = state.stage;
   const jobs = $("install").querySelectorAll(".job");
   jobs[0].className =
     state.component === "engine" ? "job active" : state.engineVerified ? "job complete" : "job";
