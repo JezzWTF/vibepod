@@ -26,6 +26,8 @@ export default function VoicesPage() {
     [playing, setPlaying] = useState<string | null>(null),
     [toast, setToast] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
+  const confirmDialog = useRef<HTMLDialogElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     try {
       const [list, used] = await Promise.all([api("voices"), api("voices/usage")]);
@@ -47,6 +49,11 @@ export default function VoicesPage() {
     },
     []
   );
+  useEffect(() => {
+    const dialog = confirmDialog.current;
+    if (removing && !dialog?.open) dialog?.showModal();
+    else if (!removing && dialog?.open) dialog.close();
+  }, [removing]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4000);
@@ -78,6 +85,7 @@ export default function VoicesPage() {
       setToast(`${removing.name} deleted`);
       setRemoving(null);
       await load();
+      searchInput.current?.focus();
     } catch (e) {
       setError((e as Error).message);
       setRemoving(null);
@@ -104,6 +112,7 @@ export default function VoicesPage() {
         <h1>Your cast of voices.</h1>
         <div className="library-tools">
           <input
+            ref={searchInput}
             aria-label="Search voices"
             placeholder="Search voices…"
             value={search}
@@ -181,15 +190,17 @@ export default function VoicesPage() {
           load();
         }}
       />
-      {removing && (
-        <div className="library-dialog-backdrop" onClick={() => !deleting && setRemoving(null)}>
-          <div
-            className="library-dialog"
-            role="alertdialog"
-            aria-labelledby="voice-delete-title"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.key === "Escape" && !deleting && setRemoving(null)}
-          >
+      <dialog
+        ref={confirmDialog}
+        className="library-dialog"
+        aria-labelledby="voice-delete-title"
+        onCancel={(e) => {
+          e.preventDefault();
+          if (!deleting) setRemoving(null);
+        }}
+      >
+        {removing && (
+          <>
             <h2 id="voice-delete-title">Delete {removing.name}?</h2>
             <p>
               {removingUsage
@@ -197,16 +208,16 @@ export default function VoicesPage() {
                 : "No episode uses this voice."}
             </p>
             <footer>
-              <button autoFocus disabled={deleting} onClick={() => setRemoving(null)}>
+              <button disabled={deleting} onClick={() => setRemoving(null)}>
                 Keep voice
               </button>
               <button className="voice-delete" disabled={deleting} onClick={remove}>
                 {deleting ? "Deleting…" : "Delete voice"}
               </button>
             </footer>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </dialog>
       {toast && (
         <div className="library-toast" role="status">
           {toast}

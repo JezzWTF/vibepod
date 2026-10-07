@@ -107,21 +107,26 @@
     display: none;
   }
   .voice-row {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-columns: 40px minmax(0, 1fr);
+    row-gap: 10px;
   }
-  .voice-usage {
-    display: none;
+  .voice-usage,
+  .voice-actions {
+    grid-column: 2;
+  }
+  .voice-actions {
+    justify-content: flex-start;
   }
 }
 @media (max-width: 640px) {
   .voices-main {
     padding: 24px 16px;
   }
-  .voice-row {
-    grid-template-columns: 40px minmax(0, 1fr);
-  }
-  .voice-actions {
-    grid-column: 2;
-    justify-content: flex-start;
-  }
+}
+dialog.library-dialog {
+  color: #e8e9eb;
+  margin: auto;
+}
+dialog.library-dialog::backdrop {
+  background: #000a;
 }

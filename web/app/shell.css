@@ -119,20 +119,32 @@
     flex: none;
     height: auto;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     padding: 8px 12px;
-    gap: 12px;
+    gap: 8px 12px;
     border-right: 0;
     border-bottom: 1px solid #34373e;
   }
   .app-rail ul {
+    flex: 1;
+    min-width: 0;
     flex-direction: row;
+    flex-wrap: wrap;
   }
   .app-rail a {
     flex-direction: row;
     padding: 8px 10px;
   }
-  .app-rail-footer span:last-child {
+  .app-rail-footer {
+    margin-top: 0;
+  }
+  .app-rail-footer > span:last-child {
+    display: none;
+  }
+}
+@media (max-width: 420px) {
+  .app-rail-status span {
     display: none;
   }
 }

@@ -53,7 +53,9 @@ export default function AppRail() {
       <div className="app-rail-footer">
         <span role="status" className={`app-rail-status is-${status}`}>
           <i />
-          {status === "online" ? "Engine on" : status === "checking" ? "Checking" : "Engine off"}
+          <span>
+            {status === "online" ? "Engine on" : status === "checking" ? "Checking" : "Engine off"}
+          </span>
         </span>
         <span>{process.env.NEXT_PUBLIC_VIBEPOD_VERSION}</span>
       </div>

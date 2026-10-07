@@ -7,8 +7,16 @@ function isNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function intersects(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+const TITLE_BAR = 40;
+const GRAB_WIDTH = 120;
+
+// The title bar must be on a display and wide enough to grab, or the window cannot be moved back.
+function reachable(bounds, area) {
+  const overlap =
+    Math.min(bounds.x + bounds.width, area.x + area.width) - Math.max(bounds.x, area.x);
+  return (
+    overlap >= GRAB_WIDTH && bounds.y >= area.y && bounds.y <= area.y + area.height - TITLE_BAR
+  );
 }
 
 // Reads the saved window bounds; anything missing, corrupt or off every display is dropped.
@@ -27,7 +35,7 @@ function loadWindowState(file, displays = []) {
   };
   if (isNumber(saved.x) && isNumber(saved.y)) {
     const bounds = { x: Math.round(saved.x), y: Math.round(saved.y), ...state };
-    if (displays.some((area) => intersects(bounds, area))) {
+    if (displays.some((area) => reachable(bounds, area))) {
       state.x = bounds.x;
       state.y = bounds.y;
     }

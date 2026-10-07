@@ -36,6 +36,18 @@ test("a position on a display that is gone is dropped but the size is kept", () 
   assert.equal(state.maximized, true);
 });
 
+test("a window with only a sliver or no title bar on screen gets a fresh position", () => {
+  for (const placement of [
+    { x: 1900, y: 0 },
+    { x: 100, y: 1070 },
+    { x: 100, y: -300 },
+  ]) {
+    const f = file();
+    saveWindowState(f, { ...placement, width: 1200, height: 800 });
+    assert.equal(loadWindowState(f, [display]).x, undefined, JSON.stringify(placement));
+  }
+});
+
 test("saved sizes never go below the window minimum", () => {
   const f = file();
   saveWindowState(f, { x: 0, y: 0, width: 300, height: 200 });
